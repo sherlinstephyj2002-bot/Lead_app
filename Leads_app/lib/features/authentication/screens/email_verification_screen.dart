@@ -2,9 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../shared/providers/providers.dart';
-import '../../../constants/firestore_collections.dart';
 
 class EmailVerificationScreen extends ConsumerStatefulWidget {
   const EmailVerificationScreen({super.key});
@@ -21,17 +19,16 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
   String? _message;
   String? _error;
 
-  final _otpController = TextEditingController();
-
   @override
   void initState() {
     super.initState();
-    _sendVerificationSilent();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sendVerificationSilent();
+    });
   }
 
   @override
   void dispose() {
-    _otpController.dispose();
     _timer?.cancel();
     super.dispose();
   }
@@ -56,8 +53,6 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
     try {
       final user = ref.read(authProvider).user;
       if (user != null && user.email.isNotEmpty) {
-        await ref.read(authProvider.notifier).sendEmailOtp(user.email);
-      } else {
         await ref.read(authProvider.notifier).sendEmailVerification();
       }
     } catch (_) {
@@ -75,15 +70,10 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
     });
 
     try {
-      final user = ref.read(authProvider).user;
-      if (user != null && user.email.isNotEmpty) {
-        await ref.read(authProvider.notifier).sendEmailOtp(user.email);
-      } else {
-        await ref.read(authProvider.notifier).sendEmailVerification();
-      }
+      await ref.read(authProvider.notifier).sendEmailVerification();
       if (mounted) {
         setState(() {
-          _message = 'Verification Email OTP sent! Please check your inbox.';
+          _message = 'Verification link sent to your email! Please check your inbox.';
           _error = null;
         });
         _startCooldown();
@@ -91,7 +81,7 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = 'Failed to send verification email.';
+          _error = 'Failed to send verification email. Please try again later.';
           _message = null;
         });
       }
@@ -114,31 +104,14 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
     });
 
     try {
-      final user = ref.read(authProvider).user;
-      final otpText = _otpController.text.trim();
-
-      if (otpText.isNotEmpty) {
-        final success = await ref.read(authProvider.notifier).verifyEmailOtp(user?.email ?? '', otpText);
-        if (mounted) {
-          if (success) {
-            context.go('/main');
-          } else {
-            final err = ref.read(authProvider).errorMessage;
-            setState(() {
-              _error = err ?? 'Invalid OTP code.';
-            });
-          }
-        }
-      } else {
-        final isVerified = await ref.read(authProvider.notifier).checkEmailVerificationStatus();
-        if (mounted) {
-          if (isVerified) {
-            context.go('/main');
-          } else {
-            setState(() {
-              _error = 'Email is not verified yet. Enter the 6-digit Email OTP sent to your inbox.';
-            });
-          }
+      final isVerified = await ref.read(authProvider.notifier).checkEmailVerificationStatus();
+      if (mounted) {
+        if (isVerified) {
+          context.go('/main');
+        } else {
+          setState(() {
+            _error = 'Your email has not been verified yet. Please check your inbox and click the verification link.';
+          });
         }
       }
     } catch (e) {
@@ -178,7 +151,7 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Curved Indigo/Blue Gradient Card Header
+                // Header Container
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(24.0),
@@ -202,7 +175,6 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                   ),
                   child: Column(
                     children: [
-                      // Animated/Glowing email icon wrapper
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -226,7 +198,7 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Verification code sent to:',
+                        "We've sent a verification link to:",
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.white.withValues(alpha: 0.8),
@@ -246,7 +218,7 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                   ),
                 ),
 
-                // Main Info Card
+                // Card Body
                 Container(
                   width: double.infinity,
                   decoration: const BoxDecoration(
@@ -266,9 +238,9 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
                     children: [
-                      Text(
-                        'Verification code sent to ${user?.email ?? 'your business email'}. Please enter the 6-digit code below to complete company registration.',
-                        style: const TextStyle(
+                      const Text(
+                        'Please check your inbox and click the verification link to continue.',
+                        style: TextStyle(
                           fontSize: 14,
                           color: Color(0xFF64748B),
                           height: 1.5,
@@ -277,7 +249,7 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                       ),
                       const SizedBox(height: 24),
 
-                      // Status Alert/Message Block
+                      // Status Alert Banners
                       if (_message != null)
                         Container(
                           margin: const EdgeInsets.only(bottom: 20),
@@ -324,24 +296,7 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                           ),
                         ),
 
-                      TextFormField(
-                        controller: _otpController,
-                        keyboardType: TextInputType.number,
-                        maxLength: 6,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 6),
-                        decoration: InputDecoration(
-                          hintText: '123456',
-                          hintStyle: const TextStyle(color: Color(0xFFCBD5E1), letterSpacing: 6),
-                          labelText: 'Enter 6-Digit Email OTP',
-                          prefixIcon: const Icon(Icons.pin_outlined),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Action Buttons
+                      // Buttons
                       SizedBox(
                         width: double.infinity,
                         height: 48,
@@ -353,8 +308,8 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                                   width: 20,
                                   child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                                 )
-                              : const Icon(Icons.check_circle_rounded),
-                          label: Text(_isChecking ? 'Verifying OTP...' : 'Verify OTP'),
+                              : const Icon(Icons.verified_user_rounded),
+                          label: Text(_isChecking ? 'Checking Verification...' : "I've Verified My Email"),
                           style: ElevatedButton.styleFrom(
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
@@ -375,7 +330,7 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                                   width: 20,
                                   child: CircularProgressIndicator(color: Colors.grey, strokeWidth: 2),
                                 )
-                              : const Icon(Icons.refresh_rounded),
+                              : const Icon(Icons.mark_email_read_rounded),
                           label: Text(
                             _cooldownSeconds > 0
                                 ? 'Resend Link in ${_cooldownSeconds}s'
@@ -385,49 +340,6 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                             side: BorderSide(color: primaryColor),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: TextButton.icon(
-                          onPressed: () async {
-                            final authNotifier = ref.read(authProvider.notifier);
-                            final bypassNotifier = ref.read(bypassVerificationProvider.notifier);
-                            final currentUser = ref.read(authProvider).user;
-                            if (currentUser != null) {
-                              try {
-                                if (isFirebaseInitialized) {
-                                  await FirebaseFirestore.instance
-                                      .collection(FirestoreCollections.users)
-                                      .doc(currentUser.uid)
-                                      .update({'isEmailVerified': true});
-                                }
-                              } catch (_) {}
-                              
-                              authNotifier.setVerifiedLocally();
-                            }
-                            bypassNotifier.state = true;
-                            if (mounted) {
-                              context.go('/main');
-                            }
-                          },
-                          icon: const Icon(Icons.developer_mode_rounded, color: Color(0xFFF59E0B)),
-                          label: const Text(
-                            'Bypass Verification (Developer Mode)',
-                            style: TextStyle(
-                              color: Color(0xFFF59E0B),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          style: TextButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFFBEB),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: const BorderSide(color: Color(0xFFFDE68A)),
                             ),
                           ),
                         ),

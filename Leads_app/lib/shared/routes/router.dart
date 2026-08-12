@@ -101,15 +101,6 @@ class RouterListenable extends ChangeNotifier {
       },
     );
     _ref.listen<bool>(
-      bypassVerificationProvider,
-      (previous, next) {
-        if (_isDisposed) return;
-        if (previous != next) {
-          notifyListeners();
-        }
-      },
-    );
-    _ref.listen<bool>(
       emailOtpVerifiedProvider,
       (previous, next) {
         if (_isDisposed) return;
@@ -189,15 +180,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           }
 
           // Check if email verification is required (ignore mobile simulated emails)
-          final bypassVerification = ref.read(bypassVerificationProvider);
           final isCustomEmailVerified = ref.read(emailOtpVerifiedProvider);
           final needsVerification = fbUser != null &&
               !fbUser.emailVerified &&
               !isCustomEmailVerified &&
               fbUser.email != null &&
               !fbUser.email!.endsWith('@worktrack.com') &&
-              !fbUser.email!.endsWith('@worktrack.internal') &&
-              !bypassVerification;
+              !fbUser.email!.endsWith('@worktrack.internal');
 
           if (needsVerification) {
             if (state.matchedLocation != '/verify-email') {

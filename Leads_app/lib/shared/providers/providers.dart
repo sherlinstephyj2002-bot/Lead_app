@@ -18,6 +18,7 @@ import '../repositories/auth_repository.dart';
 import '../repositories/user_repository.dart';
 import '../repositories/company_repository.dart';
 import '../services/subscription_service.dart';
+import '../services/email_service.dart';
 import '../services/password_encryption.dart';
 import '../services/app_error_handler.dart';
 import '../repositories/customer_repository.dart';
@@ -991,48 +992,140 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
 
     try {
-      // Check if userDoc exists or state.user is the target registered user
-      final userDoc = await _findUserDocByIdentifier(targetEmail);
-      if (userDoc == null && (state.user == null || state.user!.email.toLowerCase() != targetEmail)) {
-        state = state.copyWith(isLoading: false, errorMessage: 'Company email not found.');
+      // 1. Generate secure random 6-digit OTP
+      final otp = (100000 + Random.secure().nextInt(900000)).toString();
+
+      // 2. Dispatch real email via SmtpEmailService
+      final emailService = _ref.read(emailServiceProvider);
+      final emailSent = await emailService.sendOtpEmail(recipientEmail: targetEmail, otp: otp);
+
+      if (!emailSent) {
+        state = state.copyWith(
+          isLoading: false,
+          errorMessage: "We couldn't send the verification email. Please check the email configuration and try again.",
+        );
         return false;
       }
 
-      final otp = (100000 + Random().nextInt(900000)).toString();
-      _ref.read(lastGeneratedEmailOtpProvider.notifier).state = otp;
-      _ref.read(emailOtpExpiryProvider.notifier).state = DateTime.now().add(const Duration(minutes: 10));
+      // 3. Invalidate previous unused OTPs for this email and store new OTP in Firestore collection email_otps
+      final expiresAt = DateTime.now().add(const Duration(minutes: 10));
+      if (isFirebaseInitialized) {
+        try {
+          final oldOtps = await FirebaseFirestore.instance
+              .collection('email_otps')
+              .where('email', isEqualTo: targetEmail)
+              .where('isUsed', isEqualTo: false)
+              .get();
 
-      debugPrint('==================================================');
-      debugPrint('📧 SIMULATED EMAIL OTP SENT');
-      debugPrint('Recipient: $targetEmail');
-      debugPrint('OTP Code: $otp (Valid for 10 minutes)');
-      debugPrint('==================================================');
+          for (final doc in oldOtps.docs) {
+            await doc.reference.update({'isUsed': true});
+          }
+
+          await FirebaseFirestore.instance.collection('email_otps').add({
+            'email': targetEmail,
+            'otp': otp,
+            'createdAt': FieldValue.serverTimestamp(),
+            'expiresAt': Timestamp.fromDate(expiresAt),
+            'isUsed': false,
+          });
+        } catch (e) {
+          debugPrint('[AUTH_DEBUG] Firestore email_otps save failed: $e');
+        }
+      }
+
+      // 4. Update Riverpod local state
+      _ref.read(lastGeneratedEmailOtpProvider.notifier).state = otp;
+      _ref.read(emailOtpExpiryProvider.notifier).state = expiresAt;
 
       state = state.copyWith(isLoading: false);
       return true;
-    } catch (e, stack) {
-      state = state.copyWith(isLoading: false, errorMessage: AppErrorHandler.parseError(e, stack));
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: "We couldn't send the verification email. Please check the email configuration and try again.",
+      );
       return false;
     }
   }
 
   Future<bool> verifyEmailOtp(String email, String otp) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
-    final lastOtp = _ref.read(lastGeneratedEmailOtpProvider);
-    final expiry = _ref.read(emailOtpExpiryProvider);
-
+    final targetEmail = email.trim().toLowerCase();
     final enteredOtp = otp.trim();
-    if (lastOtp == null || expiry == null || DateTime.now().isAfter(expiry)) {
-      if (enteredOtp != '123456') {
-        state = state.copyWith(
-          isLoading: false,
-          errorMessage: 'Verification code has expired. Please request a new verification code.',
-        );
-        return false;
+
+    if (enteredOtp.isEmpty || enteredOtp.length != 6) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Please enter the 6-digit verification code.',
+      );
+      return false;
+    }
+
+    bool isOtpValid = false;
+
+    // 1. Check Firestore email_otps collection first
+    if (isFirebaseInitialized) {
+      try {
+        final query = await FirebaseFirestore.instance
+            .collection('email_otps')
+            .where('email', isEqualTo: targetEmail)
+            .where('isUsed', isEqualTo: false)
+            .get();
+
+        for (final doc in query.docs) {
+          final data = doc.data();
+          final storedOtp = data['otp']?.toString();
+          final expiresAtField = data['expiresAt'];
+          DateTime? expiresAt;
+
+          if (expiresAtField is Timestamp) {
+            expiresAt = expiresAtField.toDate();
+          } else if (expiresAtField != null) {
+            expiresAt = DateTime.tryParse(expiresAtField.toString());
+          }
+
+          if (storedOtp == enteredOtp) {
+            if (expiresAt != null && DateTime.now().isAfter(expiresAt)) {
+              state = state.copyWith(
+                isLoading: false,
+                errorMessage: 'Verification code has expired. Please request a new verification code.',
+              );
+              return false;
+            }
+
+            // Mark OTP as used
+            await doc.reference.update({'isUsed': true});
+            isOtpValid = true;
+            break;
+          }
+        }
+      } catch (e) {
+        debugPrint('[AUTH_DEBUG] Firestore OTP query failed: $e');
       }
     }
 
-    if (enteredOtp != lastOtp && enteredOtp != '123456') {
+    // 2. Fallback check local state if Firestore query didn't find match
+    if (!isOtpValid) {
+      final lastOtp = _ref.read(lastGeneratedEmailOtpProvider);
+      final expiry = _ref.read(emailOtpExpiryProvider);
+
+      if (lastOtp != null && expiry != null) {
+        if (DateTime.now().isAfter(expiry)) {
+          state = state.copyWith(
+            isLoading: false,
+            errorMessage: 'Verification code has expired. Please request a new verification code.',
+          );
+          return false;
+        }
+
+        if (enteredOtp == lastOtp) {
+          isOtpValid = true;
+          _ref.read(lastGeneratedEmailOtpProvider.notifier).state = null;
+        }
+      }
+    }
+
+    if (!isOtpValid) {
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'Invalid verification code.',
@@ -1711,13 +1804,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e, stack) {
       state = state.copyWith(isLoading: false, errorMessage: AppErrorHandler.parseError(e, stack));
       return false;
-    }
-  }
-
-  void setVerifiedLocally() {
-    if (state.user != null) {
-      state = AuthState(user: state.user!.copyWith(isEmailVerified: true), isLoading: false);
-      _ref.read(emailOtpVerifiedProvider.notifier).state = true;
     }
   }
 
@@ -3857,8 +3943,6 @@ final leaveRequestsProvider = StateNotifierProvider<LeaveRequestsNotifier, Async
   final repo = ref.watch(leaveManagementRepositoryProvider);
   return LeaveRequestsNotifier(repo, ref);
 });
-
-final bypassVerificationProvider = StateProvider<bool>((ref) => false);
 
 final languageProvider = StateProvider<String>((ref) => 'en');
 
