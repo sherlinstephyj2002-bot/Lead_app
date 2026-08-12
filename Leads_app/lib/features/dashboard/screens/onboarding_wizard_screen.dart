@@ -1,0 +1,1964 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import '../../../shared/providers/providers.dart';
+import '../../../shared/models/company_model.dart';
+import '../../../shared/models/department_model.dart';
+import '../../company_admin/models/branch_model.dart';
+import '../../company_admin/models/designation_model.dart';
+import '../../company_admin/models/shift_model.dart';
+import '../../company_admin/models/holiday_model.dart';
+import '../../company_admin/providers/company_admin_providers.dart';
+import '../../../constants/feature_flags.dart';
+
+class OnboardingWizardScreen extends ConsumerStatefulWidget {
+  const OnboardingWizardScreen({super.key});
+
+  @override
+  ConsumerState<OnboardingWizardScreen> createState() => _OnboardingWizardScreenState();
+}
+
+class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen> {
+  int _currentStep = 0;
+  bool _isSaving = false;
+  bool _isUploadingLogo = false;
+  bool _isInitialized = false;
+
+  List<int> get _availableSteps {
+    return [
+      0, // Profile
+      if (FeatureFlags.enableBranchManagement) 1, // Branches
+      2, // Departments
+      3, // Designations
+      4, // Shifts
+      5, // Holidays
+      6, // Review
+    ];
+  }
+
+  // Step 1: Profile Form Fields
+  final _formKeyProfile = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _addressController = TextEditingController();
+  final _countryController = TextEditingController();
+  final _stateController = TextEditingController();
+  final _cityController = TextEditingController();
+  String? _logoUrl;
+
+  String _timeZone = 'UTC+05:30 (India)';
+  String _currency = 'INR';
+  List<String> _selectedWorkingDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+  final List<String> _commonCurrencies = ['INR', 'USD', 'EUR', 'GBP', 'AUD', 'CAD', 'SGD', 'AED', 'JPY', 'CNY'];
+  final List<String> _commonTimeZones = [
+    'UTC+05:30 (India)',
+    'UTC+00:00 (GMT/UTC)',
+    'UTC-05:00 (EST)',
+    'UTC-08:00 (PST)',
+    'UTC+01:00 (CET)',
+    'UTC+04:00 (GST - Dubai)',
+    'UTC+08:00 (SGT - Singapore)',
+    'UTC+09:00 (JST - Tokyo)'
+  ];
+  final List<String> _weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _addressController.dispose();
+    _countryController.dispose();
+    _stateController.dispose();
+    _cityController.dispose();
+    super.dispose();
+  }
+
+  // Initialize Step 1 controllers with existing company info
+  void _initFields(CompanyModel company) {
+    if (_isInitialized) return;
+    _nameController.text = company.name;
+    _addressController.text = company.address;
+    _countryController.text = company.country;
+    _stateController.text = company.state;
+    _cityController.text = company.city;
+    _logoUrl = company.logoUrl;
+    _timeZone = company.timeZone.isNotEmpty ? company.timeZone : 'UTC+05:30 (India)';
+    _currency = company.currency.isNotEmpty ? company.currency : 'INR';
+    _selectedWorkingDays = List<String>.from(company.workingDays);
+    final available = _availableSteps;
+    int dbStep = company.setupWizardStep;
+    int index = available.indexOf(dbStep);
+    if (index == -1) {
+      index = available.indexWhere((s) => s >= dbStep);
+      if (index == -1) index = available.length - 1;
+    }
+    _currentStep = index;
+    _isInitialized = true;
+  }
+
+  // Helper mapping from category name to icon
+  IconData _getStepIcon(int stepIndex) {
+    switch (stepIndex) {
+      case 0:
+        return Icons.business_rounded;
+      case 1:
+        return Icons.location_city_rounded;
+      case 2:
+        return Icons.business_center_rounded;
+      case 3:
+        return Icons.badge_outlined;
+      case 4:
+        return Icons.schedule_rounded;
+      case 5:
+        return Icons.calendar_today_rounded;
+      default:
+        return Icons.verified_user_outlined;
+    }
+  }
+
+  String _getStepTitle(int stepIndex) {
+    switch (stepIndex) {
+      case 0:
+        return 'Company Profile';
+      case 1:
+        return 'Configure Branches';
+      case 2:
+        return 'Configure Departments';
+      case 3:
+        return 'Configure Designations';
+      case 4:
+        return 'Work Shifts';
+      case 5:
+        return 'Holiday Calendar';
+      default:
+        return 'Review & Finish';
+    }
+  }
+
+  // Handle logo image upload to Firebase Storage
+  Future<void> _uploadLogo() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
+    if (pickedFile == null) return;
+
+    setState(() => _isUploadingLogo = true);
+    try {
+      final fileBytes = await pickedFile.readAsBytes();
+      final fileName = pickedFile.name;
+      final company = ref.read(companyProvider).value;
+      if (company == null) return;
+
+      final storagePath = 'companies/${company.companyId}/logo_${DateTime.now().millisecondsSinceEpoch}_$fileName';
+      final uploadTask = await FirebaseStorage.instance.ref(storagePath).putData(fileBytes);
+      final downloadUrl = await uploadTask.ref.getDownloadURL();
+
+      setState(() {
+        _logoUrl = downloadUrl;
+      });
+      _showSnackBar('Logo uploaded successfully.');
+    } catch (e) {
+      _showSnackBar('Failed to upload logo: $e', isError: true);
+    } finally {
+      setState(() => _isUploadingLogo = false);
+    }
+  }
+
+  // Save current step progress and move to next step
+  Future<void> _handleNext(CompanyModel company) async {
+    final available = _availableSteps;
+    if (available[_currentStep] == 0) {
+      // Validate Step 1 Form
+      if (!_formKeyProfile.currentState!.validate()) return;
+      if (_selectedWorkingDays.isEmpty) {
+        _showSnackBar('Please select at least one working day.', isError: true);
+        return;
+      }
+
+      setState(() => _isSaving = true);
+      try {
+        final nextDbStep = available[1];
+        final updatedCompany = company.copyWith(
+          name: _nameController.text.trim(),
+          address: _addressController.text.trim(),
+          country: _countryController.text.trim(),
+          state: _stateController.text.trim(),
+          city: _cityController.text.trim(),
+          logoUrl: _logoUrl,
+          timeZone: _timeZone,
+          currency: _currency,
+          workingDays: _selectedWorkingDays,
+          setupWizardStep: nextDbStep,
+        );
+
+        await ref.read(companyProvider.notifier).updateCompany(updatedCompany);
+        setState(() {
+          _currentStep = 1;
+        });
+      } catch (e) {
+        _showSnackBar('Failed to save company profile: $e', isError: true);
+      } finally {
+        setState(() => _isSaving = false);
+      }
+    } else {
+      // For CRUD steps (1-5 which maps to Steps 2-6), simply increment local step and update setupWizardStep in Firestore
+      setState(() => _isSaving = true);
+      try {
+        final nextStepIndex = _currentStep + 1;
+        final nextDbStep = nextStepIndex < available.length ? available[nextStepIndex] : 7;
+        final updatedCompany = company.copyWith(
+          setupWizardStep: nextDbStep,
+        );
+        await ref.read(companyProvider.notifier).updateCompany(updatedCompany);
+        setState(() {
+          _currentStep = nextStepIndex;
+        });
+      } catch (e) {
+        _showSnackBar('Failed to update progress: $e', isError: true);
+      } finally {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  // Complete Onboarding Wizard (Step 7 Finish)
+  Future<void> _completeWizard(CompanyModel company) async {
+    setState(() => _isSaving = true);
+    try {
+      final updatedCompany = company.copyWith(
+        isSetupCompleted: true,
+        setupWizardStep: 7,
+      );
+
+      await ref.read(companyProvider.notifier).updateCompany(updatedCompany);
+
+      if (mounted) {
+        Navigator.pop(context);
+        _showSnackBar('Company setup completed successfully!');
+      }
+    } catch (e) {
+      _showSnackBar('Failed to complete onboarding: $e', isError: true);
+    } finally {
+      setState(() => _isSaving = false);
+    }
+  }
+
+  // Skip wizard or close dialog
+  void _skipWizard() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Continue Setup Later?', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text(
+          'You can exit the setup wizard now and resume configuring the branches, shifts, and configurations later from your Home Dashboard.',
+          style: TextStyle(color: Color(0xFF475569)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Stay', style: TextStyle(color: Color(0xFF64748B))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).primaryColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx); // Close dialog
+              Navigator.pop(context); // Close Wizard
+            },
+            child: const Text('Exit Wizard', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final companyAsync = ref.watch(companyProvider);
+
+    return companyAsync.when(
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (err, stack) => Scaffold(body: Center(child: Text('Error: $err', style: const TextStyle(color: Colors.red)))),
+      data: (company) {
+        if (company != null) {
+          _initFields(company);
+        } else {
+          return const Scaffold(body: Center(child: Text('No company details found.')));
+        }
+
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+
+        return Scaffold(
+          backgroundColor: isDark ? Theme.of(context).scaffoldBackgroundColor : const Color(0xFFF8FAFC),
+          appBar: AppBar(
+            title: Text(_getStepTitle(_availableSteps[_currentStep]), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: _currentStep > 0
+                  ? () {
+                      setState(() {
+                        _currentStep--;
+                      });
+                    }
+                  : () => _skipWizard(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: _skipWizard,
+                child: const Text('Skip & Exit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              _buildProgressIndicator(),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 800),
+                      child: _buildStepContent(company),
+                    ),
+                  ),
+                ),
+              ),
+              _buildNavigationButtons(company),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Premium Top Step Progress Indicator
+  Widget _buildProgressIndicator() {
+    final available = _availableSteps;
+    final totalSteps = available.length;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: List.generate(totalSteps, (index) {
+          final isCompleted = index < _currentStep;
+          final isActive = index == _currentStep;
+          final isLast = index == totalSteps - 1;
+          final stepVal = available[index];
+
+          return Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: isCompleted
+                              ? Colors.green
+                              : (isActive ? Theme.of(context).primaryColor : Colors.grey[200]),
+                          shape: BoxShape.circle,
+                          border: isActive
+                              ? Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.2), width: 3)
+                              : null,
+                        ),
+                        child: Center(
+                          child: isCompleted
+                              ? const Icon(Icons.check, color: Colors.white, size: 14)
+                              : Icon(
+                                  _getStepIcon(stepVal),
+                                  color: isActive || isCompleted ? Colors.white : Colors.grey[500],
+                                  size: 14,
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Step ${index + 1}',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                          color: isActive ? Theme.of(context).primaryColor : Colors.grey[500],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!isLast)
+                  Container(
+                    width: 20,
+                    height: 2,
+                    color: isCompleted ? Colors.green : Colors.grey[300],
+                    margin: const EdgeInsets.only(bottom: 12),
+                  ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  // Stepper content switch
+  Widget _buildStepContent(CompanyModel company) {
+    final available = _availableSteps;
+    final stepVal = _currentStep < available.length ? available[_currentStep] : 0;
+    switch (stepVal) {
+      case 0:
+        return _buildStep1Profile();
+      case 1:
+        return _buildStep2Branches(company);
+      case 2:
+        return _buildStep3Departments(company);
+      case 3:
+        return _buildStep4Designations(company);
+      case 4:
+        return _buildStep5Shifts(company);
+      case 5:
+        return _buildStep6Holidays(company);
+      case 6:
+        return _buildStep7Review(company);
+      default:
+        return _buildStep1Profile();
+    }
+  }
+
+  // STEP 1 - Profile Details Form
+  Widget _buildStep1Profile() {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Form(
+          key: _formKeyProfile,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Company Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 16),
+              Center(
+                child: Column(
+                  children: [
+                    Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 50,
+                          backgroundColor: const Color(0xFFEFF6FF),
+                          backgroundImage: _logoUrl != null ? NetworkImage(_logoUrl!) : null,
+                          child: _logoUrl == null
+                              ? Icon(Icons.business_rounded, size: 50, color: Colors.blue[300])
+                              : null,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: CircleAvatar(
+                            backgroundColor: Theme.of(context).primaryColor,
+                            radius: 16,
+                            child: _isUploadingLogo
+                                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : IconButton(
+                                    icon: const Icon(Icons.camera_alt, color: Colors.white, size: 14),
+                                    onPressed: _uploadLogo,
+                                    padding: EdgeInsets.zero,
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text('Company Logo', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Company Name *',
+                  prefixIcon: Icon(Icons.business_rounded),
+                ),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Company name is required' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _addressController,
+                decoration: const InputDecoration(
+                  labelText: 'Company Address *',
+                  prefixIcon: Icon(Icons.location_on_outlined),
+                ),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Address is required' : null,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: _cityController,
+                      decoration: const InputDecoration(labelText: 'City / Town *'),
+                      validator: (v) => v == null || v.trim().isEmpty ? 'City / Town is required' : null,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _stateController,
+                      decoration: const InputDecoration(labelText: 'State / Province / Region'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _countryController,
+                decoration: const InputDecoration(labelText: 'Country / Region *'),
+                validator: (v) => v == null || v.trim().isEmpty ? 'Country / Region is required' : null,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _timeZone,
+                decoration: const InputDecoration(
+                  labelText: 'Time Zone *',
+                  prefixIcon: Icon(Icons.public_rounded),
+                ),
+                items: _commonTimeZones.map((tz) => DropdownMenuItem(value: tz, child: Text(tz))).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _timeZone = val);
+                },
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _currency,
+                decoration: const InputDecoration(
+                  labelText: 'Currency *',
+                  prefixIcon: Icon(Icons.monetization_on_outlined),
+                ),
+                items: _commonCurrencies.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                onChanged: (val) {
+                  if (val != null) setState(() => _currency = val);
+                },
+              ),
+              const SizedBox(height: 20),
+              const Text('Configure Working Days *', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF475569))),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _weekDays.map((day) {
+                  final isSelected = _selectedWorkingDays.contains(day);
+                  return FilterChip(
+                    label: Text(day.substring(0, 3)),
+                    selected: isSelected,
+                    selectedColor: Theme.of(context).primaryColor.withValues(alpha: 0.2),
+                    checkmarkColor: Theme.of(context).primaryColor,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Theme.of(context).primaryColor : const Color(0xFF64748B),
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    onSelected: (val) {
+                      setState(() {
+                        if (val) {
+                          _selectedWorkingDays.add(day);
+                        } else {
+                          _selectedWorkingDays.remove(day);
+                        }
+                      });
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // STEP 2 - Branches Management List
+  Widget _buildStep2Branches(CompanyModel company) {
+    final branchesAsync = ref.watch(adminBranchesProvider);
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Branches configured', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ElevatedButton.icon(
+              onPressed: () => _showBranchFormDialog(company.companyId),
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('Add Branch', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        branchesAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, _) => Center(child: Text('Error loading branches: $err', style: const TextStyle(color: Colors.red))),
+          data: (branches) {
+            final activeBranches = branches.where((b) => b.status == 'active').toList();
+            if (activeBranches.isEmpty) {
+              return _buildEmptyStateCard(
+                icon: Icons.location_city_rounded,
+                title: 'No branches added',
+                description: 'Add your corporate office branch locations to manage employee geolocations.',
+                onAddPressed: () => _showBranchFormDialog(company.companyId),
+                buttonText: 'Add First Branch',
+              );
+            }
+
+            return ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: activeBranches.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final b = activeBranches[index];
+                return Card(
+                  elevation: 0,
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFEFF6FF),
+                      child: Icon(Icons.location_on, color: Colors.blue),
+                    ),
+                    title: Text(b.branchName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: Text('Code: ${b.branchCode} • ${b.city}, ${b.state}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.orange),
+                          onPressed: () => _showBranchFormDialog(company.companyId, branch: b),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.archive_outlined, size: 18, color: Colors.red),
+                          onPressed: () => _archiveBranchConfirm(b),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // STEP 3 - Departments Management List
+  Widget _buildStep3Departments(CompanyModel company) {
+    final deptsAsync = ref.watch(adminDepartmentsProvider);
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Departments configured', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ElevatedButton.icon(
+              onPressed: () => _showDepartmentFormDialog(company.companyId),
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('Add Dept', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        deptsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, _) => Center(child: Text('Error loading departments: $err', style: const TextStyle(color: Colors.red))),
+          data: (depts) {
+            final activeDepts = depts.where((d) => d.status == 'active').toList();
+            if (activeDepts.isEmpty) {
+              return _buildEmptyStateCard(
+                icon: Icons.business_center_rounded,
+                title: 'No departments added',
+                description: 'Define departments (e.g. Sales, HR, Engineering) to categorize employee profiles.',
+                onAddPressed: () => _showDepartmentFormDialog(company.companyId),
+                buttonText: 'Add Department',
+              );
+            }
+
+            return ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: activeDepts.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final d = activeDepts[index];
+                return Card(
+                  elevation: 0,
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFFFF7ED),
+                      child: Icon(Icons.corporate_fare, color: Colors.orange),
+                    ),
+                    title: Text(d.departmentName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: Text(d.description.isNotEmpty ? d.description : 'No description provided.', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.orange),
+                          onPressed: () => _showDepartmentFormDialog(company.companyId, department: d),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                          onPressed: () => _deleteDeptConfirm(d),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // STEP 4 - Designations Management List
+  Widget _buildStep4Designations(CompanyModel company) {
+    final designationsAsync = ref.watch(adminDesignationsProvider);
+    final deptsAsync = ref.watch(adminDepartmentsProvider);
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Designations configured', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ElevatedButton.icon(
+              onPressed: () {
+                final activeDepts = (deptsAsync.value ?? []).where((d) => d.status == 'active').toList();
+                if (activeDepts.isEmpty) {
+                  _showSnackBar('Please add at least one department first.', isError: true);
+                } else {
+                  _showDesignationFormDialog(company.companyId, activeDepts);
+                }
+              },
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('Add Desig', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        designationsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, _) => Center(child: Text('Error loading designations: $err', style: const TextStyle(color: Colors.red))),
+          data: (designations) {
+            final activeDesigs = designations.where((d) => d.status == 'active').toList();
+            if (activeDesigs.isEmpty) {
+              return _buildEmptyStateCard(
+                icon: Icons.badge_outlined,
+                title: 'No designations added',
+                description: 'Add corporate hierarchy designations (e.g. Sales Associate, Tech Lead, Director).',
+                onAddPressed: () {
+                  final activeDepts = (deptsAsync.value ?? []).where((d) => d.status == 'active').toList();
+                  if (activeDepts.isEmpty) {
+                    _showSnackBar('Please add at least one department first.', isError: true);
+                  } else {
+                    _showDesignationFormDialog(company.companyId, activeDepts);
+                  }
+                },
+                buttonText: 'Add Designation',
+              );
+            }
+
+            return ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: activeDesigs.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final desig = activeDesigs[index];
+                final dept = (deptsAsync.value ?? [])
+                    .cast<DepartmentModel?>()
+                    .firstWhere((d) => d!.departmentId == desig.departmentId,
+                        orElse: () => null);
+                final deptName = dept?.departmentName ?? 'Unknown';
+
+                return Card(
+                  elevation: 0,
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: const Color(0xFFECFDF5),
+                      child: FeatureFlags.enableDesignationLevels
+                          ? Text('${desig.designationLevel}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 13))
+                          : const Icon(Icons.badge_outlined, color: Colors.green, size: 18),
+                    ),
+                    title: Text(desig.designationName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: Text(
+                      FeatureFlags.enableDesignationLevels
+                          ? 'Dept: $deptName • Level: ${desig.designationLevel}'
+                          : 'Dept: $deptName',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.orange),
+                          onPressed: () {
+                            final activeDepts = (deptsAsync.value ?? []).where((d) => d.status == 'active').toList();
+                            _showDesignationFormDialog(company.companyId, activeDepts, designation: desig);
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                          onPressed: () => _deleteDesigConfirm(desig),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // STEP 5 - Work Shifts Management List
+  Widget _buildStep5Shifts(CompanyModel company) {
+    final shiftsAsync = ref.watch(adminShiftsProvider);
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Work Shifts configured', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ElevatedButton.icon(
+              onPressed: () => _showShiftFormDialog(company.companyId),
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('Add Shift', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        shiftsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, _) => Center(child: Text('Error loading shifts: $err', style: const TextStyle(color: Colors.red))),
+          data: (shifts) {
+            final activeShifts = shifts.where((s) => s.status == 'active').toList();
+            if (activeShifts.isEmpty) {
+              return _buildEmptyStateCard(
+                icon: Icons.schedule_rounded,
+                title: 'No shifts configured',
+                description: 'Define your office timing shifts (e.g. Morning Shift, Night Shift) for logging check-ins.',
+                onAddPressed: () => _showShiftFormDialog(company.companyId),
+                buttonText: 'Add First Shift',
+              );
+            }
+
+            return ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: activeShifts.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final s = activeShifts[index];
+                return Card(
+                  elevation: 0,
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFF5F3FF),
+                      child: Icon(Icons.access_time_rounded, color: Colors.purple),
+                    ),
+                    title: Text(s.shiftName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: Text(
+                      '${s.startTime} - ${s.endTime} (${s.workingHours} hrs) • Break: ${s.breakDuration} mins',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.orange),
+                          onPressed: () => _showShiftFormDialog(company.companyId, shift: s),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                          onPressed: () => _deleteShiftConfirm(s),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // STEP 6 - Holidays Management List
+  Widget _buildStep6Holidays(CompanyModel company) {
+    final holidaysAsync = ref.watch(adminHolidaysProvider);
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Holidays configured', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ElevatedButton.icon(
+              onPressed: () => _showHolidayFormDialog(company.companyId),
+              icon: const Icon(Icons.add, size: 14),
+              label: const Text('Add Holiday', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        holidaysAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (err, _) => Center(child: Text('Error loading holidays: $err', style: const TextStyle(color: Colors.red))),
+          data: (holidays) {
+            final activeHolidays = holidays.where((h) => h.status == 'active').toList();
+            if (activeHolidays.isEmpty) {
+              return _buildEmptyStateCard(
+                icon: Icons.calendar_today_rounded,
+                title: 'No holidays added',
+                description: 'Configure company holidays (e.g. New Year, Independence Day) so salary and leave rules align.',
+                onAddPressed: () => _showHolidayFormDialog(company.companyId),
+                buttonText: 'Add First Holiday',
+              );
+            }
+
+            // Sort holidays by date
+            activeHolidays.sort((a, b) => a.holidayDate.compareTo(b.holidayDate));
+
+            return ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: activeHolidays.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final h = activeHolidays[index];
+                final dateStr = DateFormat('dd MMM yyyy').format(h.holidayDate);
+                return Card(
+                  elevation: 0,
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  child: ListTile(
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFFEF2F2),
+                      child: Icon(Icons.event, color: Colors.red),
+                    ),
+                    title: Text(h.holidayName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: Text('$dateStr • Type: ${h.holidayType}', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.orange),
+                          onPressed: () => _showHolidayFormDialog(company.companyId, holiday: h),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                          onPressed: () => _deleteHolidayConfirm(h),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  // STEP 7 - Review & Finish
+  Widget _buildStep7Review(CompanyModel company) {
+    final branches = ref.watch(adminBranchesProvider).value ?? [];
+    final depts = ref.watch(adminDepartmentsProvider).value ?? [];
+    final designations = ref.watch(adminDesignationsProvider).value ?? [];
+    final shifts = ref.watch(adminShiftsProvider).value ?? [];
+    final holidays = ref.watch(adminHolidaysProvider).value ?? [];
+
+    final activeBranchesCount = branches.where((b) => b.status == 'active').length;
+    final activeDeptsCount = depts.where((d) => d.status == 'active').length;
+    final activeDesigsCount = designations.where((d) => d.status == 'active').length;
+    final activeShiftsCount = shifts.where((s) => s.status == 'active').length;
+    final activeHolidaysCount = holidays.where((h) => h.status == 'active').length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Center(
+          child: Column(
+            children: [
+              Icon(Icons.stars_rounded, size: 70, color: Colors.green),
+              SizedBox(height: 12),
+              Text(
+                'Almost Done!',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Color(0xFF1E293B)),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Review your company configurations below before finishing setup.',
+                style: TextStyle(color: Color(0xFF64748B), fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Review Summary', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Divider(height: 24),
+                _buildSummaryRow(Icons.business, 'Company Name', company.name),
+                _buildSummaryRow(Icons.map_outlined, 'Address', '${company.address}, ${company.city}, ${company.state}, ${company.country}'),
+                _buildSummaryRow(Icons.public, 'Time Zone', company.timeZone),
+                _buildSummaryRow(Icons.monetization_on_outlined, 'Currency', company.currency),
+                _buildSummaryRow(Icons.calendar_today, 'Working Days', company.workingDays.join(', ')),
+                const Divider(height: 24),
+                if (FeatureFlags.enableBranchManagement)
+                  _buildSummaryStatRow(Icons.location_city_rounded, 'Branches Configured', activeBranchesCount),
+                _buildSummaryStatRow(Icons.business_center, 'Departments Configured', activeDeptsCount),
+                _buildSummaryStatRow(Icons.badge_outlined, 'Designations Configured', activeDesigsCount),
+                _buildSummaryStatRow(Icons.schedule, 'Shifts Defined', activeShiftsCount),
+                _buildSummaryStatRow(Icons.celebration_rounded, 'Public Holidays Added', activeHolidaysCount),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: Colors.blueGrey),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.bold)),
+                Text(value, style: const TextStyle(fontSize: 13, color: Color(0xFF1E293B), fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryStatRow(IconData icon, String label, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: Colors.blue),
+              const SizedBox(width: 12),
+              Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF475569), fontWeight: FontWeight.w500)),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            decoration: BoxDecoration(
+              color: count > 0 ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: count > 0 ? Colors.green[800] : Colors.blueGrey,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyStateCard({
+    required IconData icon,
+    required String title,
+    required String description,
+    required VoidCallback onAddPressed,
+    required String buttonText,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 40, color: Colors.grey[400]),
+          const SizedBox(height: 8),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF475569))),
+          const SizedBox(height: 4),
+          Text(description, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], fontSize: 11, height: 1.4)),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: onAddPressed,
+            icon: const Icon(Icons.add_circle_outline, size: 14),
+            label: Text(buttonText, style: const TextStyle(fontSize: 12)),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavigationButtons(CompanyModel company) {
+    final isLastStep = _currentStep == _availableSteps.length - 1;
+
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (_currentStep > 0)
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _currentStep--;
+                    });
+                  },
+                  child: const Text('Back'),
+                )
+              else
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: _skipWizard,
+                  child: const Text('Skip & Close'),
+                ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: _isSaving
+                    ? null
+                    : () {
+                        if (isLastStep) {
+                          _completeWizard(company);
+                        } else {
+                          _handleNext(company);
+                        }
+                      },
+                child: _isSaving
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text(isLastStep ? 'Complete Setup' : 'Save & Continue'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==========================================
+  // BRANCH MODAL SHEET FORM
+  // ==========================================
+  void _showBranchFormDialog(String companyId, {BranchModel? branch}) {
+    final isEdit = branch != null;
+    final formKey = GlobalKey<FormState>();
+    final nameCtrl = TextEditingController(text: branch?.branchName);
+    final codeCtrl = TextEditingController(text: branch?.branchCode);
+    final emailCtrl = TextEditingController(text: branch?.email);
+    final phoneCtrl = TextEditingController(text: branch?.phone);
+    final addrCtrl = TextEditingController(text: branch?.address);
+    final cityCtrl = TextEditingController(text: branch?.city);
+    final stateCtrl = TextEditingController(text: branch?.state);
+    final countryCtrl = TextEditingController(text: branch?.country ?? '');
+    final zipCtrl = TextEditingController(text: branch?.postalCode);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(isEdit ? 'Edit Branch' : 'Add Branch', style: const TextStyle(fontWeight: FontWeight.bold)),
+              content: SizedBox(
+                width: 500,
+                child: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextFormField(
+                          controller: nameCtrl,
+                          decoration: const InputDecoration(labelText: 'Branch Name *'),
+                          validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: codeCtrl,
+                          decoration: const InputDecoration(labelText: 'Branch Code *'),
+                          validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: emailCtrl,
+                          decoration: const InputDecoration(labelText: 'Email'),
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: phoneCtrl,
+                          decoration: const InputDecoration(labelText: 'Phone'),
+                          keyboardType: TextInputType.phone,
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: addrCtrl,
+                          decoration: const InputDecoration(labelText: 'Address'),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: cityCtrl,
+                                decoration: const InputDecoration(labelText: 'City'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextFormField(
+                                controller: stateCtrl,
+                                decoration: const InputDecoration(labelText: 'State'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: countryCtrl,
+                                decoration: const InputDecoration(labelText: 'Country'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextFormField(
+                                controller: zipCtrl,
+                                decoration: const InputDecoration(labelText: 'Postal Code'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (formKey.currentState!.validate()) {
+                      final newBranch = BranchModel(
+                        branchId: branch?.branchId ?? const Uuid().v4(),
+                        companyId: companyId,
+                        branchName: nameCtrl.text.trim(),
+                        branchCode: codeCtrl.text.trim(),
+                        email: emailCtrl.text.trim(),
+                        phone: phoneCtrl.text.trim(),
+                        address: addrCtrl.text.trim(),
+                        city: cityCtrl.text.trim(),
+                        state: stateCtrl.text.trim(),
+                        country: countryCtrl.text.trim(),
+                        postalCode: zipCtrl.text.trim(),
+                        status: branch?.status ?? 'active',
+                        createdAt: branch?.createdAt ?? DateTime.now(),
+                        updatedAt: DateTime.now(),
+                      );
+
+                      final errorMsg = await ref.read(adminBranchesProvider.notifier).saveBranch(newBranch);
+                      if (errorMsg != null) {
+                        _showSnackBar(errorMsg, isError: true);
+                      } else {
+                        Navigator.pop(ctx);
+                        _showSnackBar('Branch saved successfully.');
+                      }
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _archiveBranchConfirm(BranchModel branch) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Archive Branch'),
+        content: Text('Are you sure you want to archive "${branch.branchName}"? Employees will not be able to select this branch.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Archive', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await ref.read(adminBranchesProvider.notifier).archiveBranch(branch.branchId);
+      _showSnackBar('Branch archived.');
+    }
+  }
+
+  // ==========================================
+  // DEPARTMENT MODAL SHEET FORM
+  // ==========================================
+  void _showDepartmentFormDialog(String companyId, {DepartmentModel? department}) {
+    final isEdit = department != null;
+    final formKey = GlobalKey<FormState>();
+    final nameCtrl = TextEditingController(text: department?.departmentName);
+    final codeCtrl = TextEditingController(text: department?.departmentCode);
+    final descCtrl = TextEditingController(text: department?.description);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(isEdit ? 'Edit Department' : 'Add Department', style: const TextStyle(fontWeight: FontWeight.bold)),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Department Name *'),
+                  validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: codeCtrl,
+                  decoration: const InputDecoration(labelText: 'Department Code *'),
+                  validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: descCtrl,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  final adminUser = ref.read(authProvider).user;
+                  final newDept = DepartmentModel(
+                    departmentId: department?.departmentId ?? const Uuid().v4(),
+                    companyId: companyId,
+                    departmentName: nameCtrl.text.trim(),
+                    departmentCode: codeCtrl.text.trim().toUpperCase(),
+                    description: descCtrl.text.trim(),
+                    status: department?.status ?? 'active',
+                    createdAt: department?.createdAt ?? DateTime.now(),
+                    updatedAt: DateTime.now(),
+                    createdBy: department?.createdBy ?? adminUser?.email ?? 'Admin',
+                  );
+
+                  final success = await ref.read(adminDepartmentsProvider.notifier).saveDepartment(newDept);
+                  if (!success) {
+                    _showSnackBar('Department name already exists in this company.', isError: true);
+                  } else {
+                    Navigator.pop(ctx);
+                    _showSnackBar('Department saved successfully.');
+                  }
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _deleteDeptConfirm(DepartmentModel department) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Department'),
+        content: Text('Are you sure you want to permanently delete "${department.departmentName}"? This action cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await ref.read(adminDepartmentsProvider.notifier).deleteDepartment(department.departmentId);
+      _showSnackBar('Department deleted.');
+    }
+  }
+
+  // ==========================================
+  // DESIGNATION MODAL SHEET FORM
+  // ==========================================
+  void _showDesignationFormDialog(String companyId, List<DepartmentModel> depts, {DesignationModel? designation}) {
+    final isEdit = designation != null;
+    final formKey = GlobalKey<FormState>();
+    final nameCtrl = TextEditingController(text: designation?.designationName);
+    final levelCtrl = TextEditingController(text: designation != null ? '${designation.designationLevel}' : '1');
+    final descCtrl = TextEditingController(text: designation?.description);
+    String? selectedDeptId = designation?.departmentId ?? (depts.isNotEmpty ? depts.first.departmentId : null);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(isEdit ? 'Edit Designation' : 'Add Designation', style: const TextStyle(fontWeight: FontWeight.bold)),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(labelText: 'Designation Name *'),
+                        validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                      ),
+                      if (FeatureFlags.enableDesignationLevels) ...[
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: levelCtrl,
+                          decoration: const InputDecoration(labelText: 'Hierarchy Level (1-10) *'),
+                          keyboardType: TextInputType.number,
+                          validator: (v) {
+                            if (!FeatureFlags.enableDesignationLevels) return null;
+                            if (v == null || v.isEmpty) return 'Required';
+                            final val = int.tryParse(v);
+                            if (val == null || val < 1) return 'Must be positive integer';
+                            return null;
+                          },
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: selectedDeptId,
+                        decoration: const InputDecoration(labelText: 'Department *'),
+                        items: depts.map((d) => DropdownMenuItem(value: d.departmentId, child: Text(d.departmentName))).toList(),
+                        onChanged: (val) {
+                          if (val != null) setDialogState(() => selectedDeptId = val);
+                        },
+                        validator: (v) => v == null ? 'Required' : null,
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: descCtrl,
+                        decoration: const InputDecoration(labelText: 'Description'),
+                        maxLines: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (formKey.currentState!.validate() && selectedDeptId != null) {
+                      final newDesig = DesignationModel(
+                        designationId: designation?.designationId ?? const Uuid().v4(),
+                        companyId: companyId,
+                        designationName: nameCtrl.text.trim(),
+                        designationLevel: int.parse(levelCtrl.text),
+                        departmentId: selectedDeptId!,
+                        description: descCtrl.text.trim(),
+                        status: designation?.status ?? 'active',
+                        createdAt: designation?.createdAt ?? DateTime.now(),
+                        updatedAt: DateTime.now(),
+                      );
+
+                      final success = await ref.read(adminDesignationsProvider.notifier).saveDesignation(newDesig);
+                      if (!success) {
+                        _showSnackBar('Designation name already exists in this company.', isError: true);
+                      } else {
+                        Navigator.pop(ctx);
+                        _showSnackBar('Designation saved.');
+                      }
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _deleteDesigConfirm(DesignationModel designation) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Designation'),
+        content: Text('Are you sure you want to permanently delete "${designation.designationName}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await ref.read(adminDesignationsProvider.notifier).deleteDesignation(designation.designationId);
+      _showSnackBar('Designation deleted.');
+    }
+  }
+
+  // ==========================================
+  // SHIFT CONFIGURATION MODAL SHEET FORM
+  // ==========================================
+  void _showShiftFormDialog(String companyId, {ShiftModel? shift}) {
+    final isEdit = shift != null;
+    final formKey = GlobalKey<FormState>();
+    final nameCtrl = TextEditingController(text: shift?.shiftName);
+    final startCtrl = TextEditingController(text: shift?.startTime ?? '09:00');
+    final endCtrl = TextEditingController(text: shift?.endTime ?? '18:00');
+    final breakCtrl = TextEditingController(text: shift != null ? '${shift.breakDuration}' : '60');
+    final hoursCtrl = TextEditingController(text: shift != null ? '${shift.workingHours}' : '8.0');
+    final lateCtrl = TextEditingController(text: shift != null ? '${shift.lateToleranceMinutes}' : '15');
+    final earlyCtrl = TextEditingController(text: shift != null ? '${shift.earlyExitToleranceMinutes}' : '15');
+    bool overtimeEligible = shift?.overtimeEligible ?? false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(isEdit ? 'Edit Work Shift' : 'Add Work Shift', style: const TextStyle(fontWeight: FontWeight.bold)),
+              content: SizedBox(
+                width: 500,
+                child: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextFormField(
+                          controller: nameCtrl,
+                          decoration: const InputDecoration(labelText: 'Shift Name *'),
+                          validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: startCtrl,
+                                decoration: const InputDecoration(labelText: 'Start Time (HH:mm) *'),
+                                validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextFormField(
+                                controller: endCtrl,
+                                decoration: const InputDecoration(labelText: 'End Time (HH:mm) *'),
+                                validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: breakCtrl,
+                                decoration: const InputDecoration(labelText: 'Break Duration (mins) *'),
+                                keyboardType: TextInputType.number,
+                                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextFormField(
+                                controller: hoursCtrl,
+                                decoration: const InputDecoration(labelText: 'Working Hours (double) *'),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: lateCtrl,
+                                decoration: const InputDecoration(labelText: 'Late Tolerance (mins)'),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: TextFormField(
+                                controller: earlyCtrl,
+                                decoration: const InputDecoration(labelText: 'Early Exit Tolerance (mins)'),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SwitchListTile(
+                          title: const Text('Overtime Eligible', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                          value: overtimeEligible,
+                          onChanged: (val) {
+                            setDialogState(() {
+                              overtimeEligible = val;
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (formKey.currentState!.validate()) {
+                      final newShift = ShiftModel(
+                        shiftId: shift?.shiftId ?? const Uuid().v4(),
+                        companyId: companyId,
+                        shiftName: nameCtrl.text.trim(),
+                        shiftCode: shift?.shiftCode ?? 'SF_${nameCtrl.text.trim().toUpperCase().replaceAll(' ', '_')}',
+                        startTime: startCtrl.text.trim(),
+                        endTime: endCtrl.text.trim(),
+                        breakDurationMinutes: int.parse(breakCtrl.text),
+                        workingHours: double.parse(hoursCtrl.text),
+                        gracePeriodMinutes: int.parse(lateCtrl.text.isEmpty ? '0' : lateCtrl.text),
+                        halfDayThresholdHours: 4.0,
+                        overtimeAllowed: overtimeEligible,
+                        overtimeStartAfterHours: overtimeEligible ? 9.0 : 0.0,
+                        weeklyOffDays: const ['Sunday'],
+                        status: shift?.status ?? 'active',
+                        createdAt: shift?.createdAt ?? DateTime.now(),
+                        updatedAt: DateTime.now(),
+                      );
+
+                      final result = await ref.read(adminShiftsProvider.notifier).saveShift(newShift);
+                      if (result != 'success') {
+                        _showSnackBar(result, isError: true);
+                      } else {
+                        Navigator.pop(ctx);
+                        _showSnackBar('Shift configuration saved.');
+                      }
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _deleteShiftConfirm(ShiftModel shift) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Shift'),
+        content: Text('Are you sure you want to permanently delete shift "${shift.shiftName}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await ref.read(adminShiftsProvider.notifier).deleteShift(shift.shiftId);
+      _showSnackBar('Shift configuration deleted.');
+    }
+  }
+
+  // ==========================================
+  // HOLIDAY CONFIGURATION MODAL SHEET FORM
+  // ==========================================
+  void _showHolidayFormDialog(String companyId, {HolidayModel? holiday}) {
+    final isEdit = holiday != null;
+    final formKey = GlobalKey<FormState>();
+    final nameCtrl = TextEditingController(text: holiday?.holidayName);
+    final descCtrl = TextEditingController(text: holiday?.description);
+    DateTime selectedDate = holiday?.holidayDate ?? DateTime.now();
+    String holidayType = holiday?.holidayType ?? 'Public';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            final dateStr = DateFormat('dd MMMM yyyy').format(selectedDate);
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Text(isEdit ? 'Edit Holiday' : 'Add Holiday', style: const TextStyle(fontWeight: FontWeight.bold)),
+              content: SizedBox(
+                width: 450,
+                child: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextFormField(
+                          controller: nameCtrl,
+                          decoration: const InputDecoration(labelText: 'Holiday Name *'),
+                          validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Holiday Date *', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                          subtitle: Text(dateStr, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                          trailing: OutlinedButton(
+                            onPressed: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: selectedDate,
+                                firstDate: DateTime(DateTime.now().year - 1),
+                                lastDate: DateTime(DateTime.now().year + 5),
+                              );
+                              if (picked != null) {
+                                setDialogState(() {
+                                  selectedDate = picked;
+                                });
+                              }
+                            },
+                            child: const Text('Select'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: holidayType,
+                          decoration: const InputDecoration(labelText: 'Holiday Type *'),
+                          items: const [
+                            DropdownMenuItem(value: 'Public', child: Text('Public')),
+                            DropdownMenuItem(value: 'National', child: Text('National')),
+                            DropdownMenuItem(value: 'Regional', child: Text('Regional')),
+                            DropdownMenuItem(value: 'Company Specific', child: Text('Company Specific')),
+                            DropdownMenuItem(value: 'Restricted', child: Text('Restricted')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setDialogState(() {
+                                holidayType = val;
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: descCtrl,
+                          decoration: const InputDecoration(labelText: 'Description'),
+                          maxLines: 2,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (formKey.currentState!.validate()) {
+                      final newHoliday = HolidayModel(
+                        holidayId: holiday?.holidayId ?? const Uuid().v4(),
+                        companyId: companyId,
+                        branchId: null,
+                        holidayName: nameCtrl.text.trim(),
+                        holidayDate: selectedDate,
+                        holidayType: holidayType,
+                        description: descCtrl.text.trim(),
+                        isRecurring: false,
+                        status: holiday?.status ?? 'active',
+                        createdAt: holiday?.createdAt ?? DateTime.now(),
+                        updatedAt: DateTime.now(),
+                      );
+
+                      await ref.read(adminHolidaysProvider.notifier).saveHoliday(newHoliday);
+                      Navigator.pop(ctx);
+                      _showSnackBar('Holiday saved successfully.');
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _deleteHolidayConfirm(HolidayModel holiday) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Holiday'),
+        content: Text('Are you sure you want to permanently delete holiday "${holiday.holidayName}"?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await ref.read(adminHolidaysProvider.notifier).deleteHoliday(holiday.holidayId);
+      _showSnackBar('Holiday deleted.');
+    }
+  }
+}

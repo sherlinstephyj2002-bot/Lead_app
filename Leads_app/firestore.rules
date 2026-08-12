@@ -1,0 +1,130 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ──────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSameCompany(companyId) {
+      return isSignedIn() && getUserData().companyId == companyId;
+    }
+
+    function isAdminRole() {
+      return isSignedIn() && getUserData().role in ['Company Admin', 'Super Admin'];
+    }
+
+    function isAdminForCompany(companyId) {
+      return isAdminRole() && isSameCompany(companyId);
+    }
+
+    // ─── Users ────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid == uid || isSameCompany(resource.data.companyId));
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update: if isSignedIn() &&
+        (request.auth.uid == uid || isAdminForCompany(resource.data.companyId));
+      allow delete: if isAdminForCompany(resource.data.companyId);
+    }
+
+    // ─── Companies ────────────────────────────────────────────────
+    match /companies/{companyId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdminForCompany(companyId);
+    }
+
+    // ─── Leads ────────────────────────────────────────────────────
+    match /leads/{leadId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update, delete: if isSignedIn() && isSameCompany(resource.data.companyId);
+    }
+
+    // ─── Follow-ups ───────────────────────────────────────────────
+    match /followUps/{followUpId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update, delete: if isSignedIn() && isSameCompany(resource.data.companyId);
+    }
+
+    // ─── Orders ───────────────────────────────────────────────────
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update, delete: if isSignedIn() && isSameCompany(resource.data.companyId);
+    }
+
+    // ─── Tasks ────────────────────────────────────────────────────
+    match /tasks/{taskId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update, delete: if isSignedIn() && isSameCompany(resource.data.companyId);
+    }
+
+    // ─── Expenses ─────────────────────────────────────────────────
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update: if isSignedIn() && isSameCompany(resource.data.companyId) &&
+        (request.auth.uid == resource.data.employeeId || isAdminRole());
+      allow delete: if isAdminForCompany(resource.data.companyId);
+    }
+
+    // ─── Attendance ───────────────────────────────────────────────
+    match /attendance/{attendanceId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update: if isSignedIn() && isSameCompany(resource.data.companyId) &&
+        (request.auth.uid == resource.data.employeeId || isAdminRole());
+      allow delete: if isAdminForCompany(resource.data.companyId);
+    }
+
+    // ─── Lead Attachments ─────────────────────────────────────────
+    match /leadAttachments/{docId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update, delete: if isSignedIn() && isSameCompany(resource.data.companyId);
+    }
+
+    // ─── Order Attachments ────────────────────────────────────────
+    match /orderAttachments/{docId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update, delete: if isSignedIn() && isSameCompany(resource.data.companyId);
+    }
+
+    // ─── Lead Activities ──────────────────────────────────────────
+    match /leadActivities/{activityId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update, delete: if isSignedIn() && isSameCompany(resource.data.companyId);
+    }
+
+    // ─── Leaves ───────────────────────────────────────────────────
+    match /leaves/{leaveId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow delete: if isAdminForCompany(resource.data.companyId);
+    }
+
+    // ─── Employee Documents ─────────────────────────────────────────
+    match /employee_documents/{docId} {
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
+      allow update, delete: if isSignedIn() && isSameCompany(resource.data.companyId);
+    }
+
+    // ─── Default deny ─────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
