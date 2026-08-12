@@ -1,0 +1,82 @@
+{
+  "project_info": {
+    "project_number": "625049701631",
+    "project_id": "worktrack-7a319",
+    "storage_bucket": "worktrack-7a319.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:625049701631:android:b00936995de49c241f90ca",
+        "android_client_info": {
+          "package_name": "com.example.super_admin"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "625049701631-50q01fi8aj4v2cb8ccjurp30sndo1hbo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDP8ckGmSvsi5pJmjGSNL4xy0dDD945cUc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "625049701631-50q01fi8aj4v2cb8ccjurp30sndo1hbo.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "625049701631-jbfh00e4t1lts7ejs48i39tlhla8aqf5.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.worktrack"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:625049701631:android:a9d33a0f1ec499441f90ca",
+        "android_client_info": {
+          "package_name": "com.example.worktrack"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "625049701631-50q01fi8aj4v2cb8ccjurp30sndo1hbo.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDP8ckGmSvsi5pJmjGSNL4xy0dDD945cUc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "625049701631-50q01fi8aj4v2cb8ccjurp30sndo1hbo.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "625049701631-jbfh00e4t1lts7ejs48i39tlhla8aqf5.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.worktrack"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
