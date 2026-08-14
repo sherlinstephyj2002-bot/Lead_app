@@ -47,8 +47,7 @@ class _EmployeesScreenState extends ConsumerState<EmployeesScreen> {
     final currentUser = authState.user;
     final employeesAsync = ref.watch(employeesProvider);
 
-    final isAdmin = currentUser?.role == UserRoles.companyAdmin ||
-        currentUser?.role == UserRoles.superAdmin;
+    final isAdmin = currentUser?.role == UserRoles.companyAdmin;
     final isHr = currentUser?.role == UserRoles.hr;
     final canAddOrRemove = isAdmin || isHr;
 
@@ -505,7 +504,6 @@ class _EmployeeCard extends StatelessWidget {
     const outlineVariantColor = Color(0xFFC8C4D8);
 
     final roleColors = <String, Color>{
-      UserRoles.superAdmin: const Color(0xFF7C3AED),
       UserRoles.companyAdmin: primaryColor,
       UserRoles.hr: secondaryColor,
       UserRoles.employee: const Color(0xFF64748B),
@@ -1372,9 +1370,9 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Row(
             children: [
-              Icon(Icons.vpn_key_rounded, color: Colors.green),
+              Icon(Icons.check_circle_rounded, color: Colors.green),
               SizedBox(width: 8),
-              Text('Employee Credentials', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Inter')),
+              Text('Employee Created Successfully', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Inter', fontSize: 16)),
             ],
           ),
           content: Column(
@@ -1382,8 +1380,8 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'A Firebase Authentication account has been created for this employee. They will log in using their Employee ID and Password.',
-                style: TextStyle(fontSize: 13, color: Color(0xFF64748B), fontFamily: 'Inter'),
+                'An account has been created for this employee. The employee will use these credentials for initial login and will be required to change password.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Inter', height: 1.4),
               ),
               const SizedBox(height: 16),
               const Text('Company Code', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Inter')),
@@ -1400,23 +1398,23 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF4F46E5), fontFamily: 'Inter'),
               ),
               const SizedBox(height: 12),
-              const Text('Internal Company Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Inter')),
+              const Text('Company Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Inter')),
               const SizedBox(height: 4),
               SelectableText(
                 companyEmail,
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B), fontFamily: 'Inter'),
               ),
               const SizedBox(height: 12),
-              const Text('Temporary Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Inter')),
+              const Text('Initial Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Inter')),
               const SizedBox(height: 4),
               SelectableText(
                 password,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.red, fontFamily: 'Inter'),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF5B4CF0), fontFamily: 'Inter'),
               ),
               const SizedBox(height: 16),
               const Text(
-                'Please share these credentials with the Employee.',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green, fontFamily: 'Inter'),
+                'Please provide these initial login credentials securely to the employee.',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green, fontFamily: 'Inter', height: 1.3),
               ),
             ],
           ),
@@ -1425,7 +1423,7 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
               icon: const Icon(Icons.copy_rounded, size: 18),
               label: const Text('Copy', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600)),
               onPressed: () {
-                final text = 'Company Code: $companyCode\nEmployee ID: $employeeId\nInternal Company Email: $companyEmail\nTemporary Password: $password';
+                final text = 'Company Code: $companyCode\nEmployee ID: $employeeId\nCompany Email: $companyEmail\nInitial Password: $password';
                 Clipboard.setData(ClipboardData(text: text));
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(

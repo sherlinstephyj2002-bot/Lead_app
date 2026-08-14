@@ -33,7 +33,7 @@ class CompanyAdminDashboard extends ConsumerWidget {
 
     final company = companyAsync.value;
     final rawEmployees = employeesAsync.value ?? [];
-    final employees = rawEmployees.where((e) => e.role != UserRoles.companyAdmin && e.role != UserRoles.superAdmin).toList();
+    final employees = rawEmployees.where((e) => e.role != UserRoles.companyAdmin).toList();
     final departments = departmentsAsync.value ?? [];
     final designations = designationsAsync.value ?? [];
     final notifications = notificationsAsync.value ?? [];
@@ -495,12 +495,74 @@ class CompanyAdminDashboard extends ConsumerWidget {
       },
     ];
 
-    return Row(
-      children: actions.map((act) {
-        final color = act['color'] as Color;
-        return Expanded(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 4),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 700;
+        if (!isWide) {
+          return GridView.count(
+            crossAxisCount: 2,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            childAspectRatio: 2.4,
+            children: actions.map((act) {
+              final color = act['color'] as Color;
+              return InkWell(
+                onTap: act['onTap'] as VoidCallback,
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: cardBgColor,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: borderColor),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isDark ? Colors.black26 : const Color(0xFF111827).withValues(alpha: 0.02),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: isDark ? 0.2 : 0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(act['icon'] as IconData, color: color, size: 16),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          act['title'] as String,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: titleColor,
+                            fontFamily: 'Inter',
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          );
+        }
+
+        return Row(
+          children: actions.map((act) {
+            final color = act['color'] as Color;
+            return Expanded(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4),
             child: InkWell(
               onTap: act['onTap'] as VoidCallback,
               borderRadius: BorderRadius.circular(14),
@@ -550,6 +612,8 @@ class CompanyAdminDashboard extends ConsumerWidget {
         );
       }).toList(),
     );
+  },
+);
   }
 
   Widget _buildOverviewKpiCards({

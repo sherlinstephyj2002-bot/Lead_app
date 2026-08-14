@@ -7,6 +7,7 @@ import '../models/order_model.dart';
 import '../models/task_model.dart';
 import '../models/expense_model.dart';
 import '../../constants/firestore_collections.dart';
+import '../../constants/feature_flags.dart';
 
 class OrderPageResult {
   final List<OrderModel> orders;
@@ -108,6 +109,9 @@ class OrderRepository {
     String fileName,
     Uint8List fileBytes,
   ) async {
+    if (!FeatureFlags.enableDocumentUpload) {
+      throw Exception('File upload is currently disabled.');
+    }
     final safeFileName = fileName.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
     final storagePath = 'orders/$companyId/$orderId/${DateTime.now().millisecondsSinceEpoch}_$safeFileName';
     final ref = _storage.ref(storagePath);

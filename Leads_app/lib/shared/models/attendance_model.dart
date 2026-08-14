@@ -4,6 +4,7 @@ class AttendanceModel {
   final String attendanceId;
   final String companyId;
   final String employeeId;
+  final String? userEmployeeId; // Business employee code e.g. AB04
   final String employeeName;
   final DateTime checkInTime;
   final DateTime? checkOutTime;
@@ -27,6 +28,7 @@ class AttendanceModel {
     required this.attendanceId,
     required this.companyId,
     required this.employeeId,
+    this.userEmployeeId,
     required this.employeeName,
     required this.checkInTime,
     this.checkOutTime,
@@ -68,6 +70,7 @@ class AttendanceModel {
       attendanceId: map['attendanceId'] ?? '',
       companyId: map['companyId'] ?? '',
       employeeId: map['employeeId'] ?? '',
+      userEmployeeId: map['userEmployeeId'] ?? map['employeeCode'],
       employeeName: map['employeeName'] ?? '',
       checkInTime: _parseDate(map['checkInTime']),
       checkOutTime: _parseDateNullable(map['checkOutTime']),
@@ -94,6 +97,7 @@ class AttendanceModel {
       'attendanceId': attendanceId,
       'companyId': companyId,
       'employeeId': employeeId,
+      'userEmployeeId': userEmployeeId,
       'employeeName': employeeName,
       'checkInTime': Timestamp.fromDate(checkInTime),
       'checkOutTime': checkOutTime != null ? Timestamp.fromDate(checkOutTime!) : null,
@@ -119,6 +123,7 @@ class AttendanceModel {
     String? attendanceId,
     String? companyId,
     String? employeeId,
+    String? userEmployeeId,
     String? employeeName,
     DateTime? checkInTime,
     DateTime? checkOutTime,
@@ -142,6 +147,7 @@ class AttendanceModel {
       attendanceId: attendanceId ?? this.attendanceId,
       companyId: companyId ?? this.companyId,
       employeeId: employeeId ?? this.employeeId,
+      userEmployeeId: userEmployeeId ?? this.userEmployeeId,
       employeeName: employeeName ?? this.employeeName,
       checkInTime: checkInTime ?? this.checkInTime,
       checkOutTime: checkOutTime ?? this.checkOutTime,

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/models/company_model.dart';
 import '../../../constants/user_roles.dart';
+import '../../../constants/feature_flags.dart';
 import '../../../shared/widgets/company_logo_avatar.dart';
 import '../../../shared/utils/app_validators.dart';
 
@@ -135,6 +136,14 @@ class _CompanyProfileScreenState extends ConsumerState<CompanyProfileScreen> {
   }
 
   Future<void> _pickAndUploadLogo() async {
+    if (!FeatureFlags.enableImageUpload) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File upload is currently disabled.')),
+        );
+      }
+      return;
+    }
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.image,
@@ -347,7 +356,7 @@ class _CompanyProfileScreenState extends ConsumerState<CompanyProfileScreen> {
                               iconColor: const Color(0xFF5B4CF0),
                             ),
                           ),
-                          if (isAdmin)
+                          if (isAdmin && FeatureFlags.enableImageUpload)
                             Positioned(
                               bottom: 0,
                               right: 0,

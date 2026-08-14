@@ -1,5 +1,4 @@
 class UserRoles {
-  static const String superAdmin = "super_admin";
   static const String companyAdmin = "company_admin";
   static const String hr = "hr";
   static const String hrAdmin = "hr_admin";
@@ -14,7 +13,6 @@ class UserRoles {
   static bool allowsPersonalAttendance(String? role) {
     if (role == null) return false;
     switch (role) {
-      case superAdmin:
       case companyAdmin:
       case hrAdmin:
         return false;
@@ -33,7 +31,6 @@ class UserRoles {
     if (role == null) return false;
     switch (role) {
       case companyAdmin:
-      case superAdmin:
       case manager:
       case teamLeader:
       case employee:
@@ -47,14 +44,12 @@ class UserRoles {
     }
   }
 
-  /// Returns true ONLY if the role is a Company Admin or Super Admin who should access the Admin Dashboard.
+  /// Returns true ONLY if the role is a Company Admin who should access the Admin Dashboard.
   static bool isAdminRole(String? role) {
     if (role == null) return false;
     final r = role.trim().toLowerCase().replaceAll(' ', '_');
     return r == companyAdmin ||
-        r == superAdmin ||
         r == 'company_admin' ||
-        r == 'super_admin' ||
         r == 'admin';
   }
 
@@ -63,14 +58,12 @@ class UserRoles {
     if (role == null) return false;
     final r = role.trim().toLowerCase().replaceAll(' ', '_');
     return r == companyAdmin ||
-        r == superAdmin ||
         r == hrAdmin ||
         r == hrExecutive ||
         r == hr ||
         r == recruiter ||
         r == payrollExecutive ||
         r == 'company_admin' ||
-        r == 'super_admin' ||
         r == 'hr_admin' ||
         r == 'hr_executive';
   }
@@ -79,20 +72,20 @@ class UserRoles {
   static bool canApprovePayroll(String? role) {
     if (role == null) return false;
     final r = role.trim().toLowerCase().replaceAll(' ', '_');
-    return r == hrAdmin || r == companyAdmin || r == superAdmin || r == 'hr_admin' || r == 'company_admin' || r == 'super_admin';
+    return r == hrAdmin || r == companyAdmin || r == 'hr_admin' || r == 'company_admin';
   }
 
   /// Returns true if the user role can modify salary structures and components.
   static bool canModifySalaryStructure(String? role) {
     if (role == null) return false;
     final r = role.trim().toLowerCase().replaceAll(' ', '_');
-    return r == hrAdmin || r == companyAdmin || r == superAdmin || r == 'hr_admin' || r == 'company_admin' || r == 'super_admin';
+    return r == hrAdmin || r == companyAdmin || r == 'hr_admin' || r == 'company_admin';
   }
 
   /// Returns true if the user role can manage company holidays (CRUD).
   static bool canManageHolidays(String? role) {
     if (role == null) return false;
     final r = role.trim().toLowerCase().replaceAll(' ', '_');
-    return r == hrAdmin || r == companyAdmin || r == superAdmin || r == 'hr_admin' || r == 'company_admin' || r == 'super_admin';
+    return r == hrAdmin || r == companyAdmin || r == 'hr_admin' || r == 'company_admin';
   }
 }

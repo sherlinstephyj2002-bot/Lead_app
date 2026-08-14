@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../models/company_model.dart';
 import '../../constants/firestore_collections.dart';
+import '../../constants/feature_flags.dart';
 
 class CompanyRepository {
   final FirebaseFirestore _firestore;
@@ -47,6 +48,9 @@ class CompanyRepository {
   }
 
   Future<String> uploadCompanyLogo(String companyId, Uint8List fileBytes) async {
+    if (!FeatureFlags.enableImageUpload) {
+      throw Exception('File upload is currently disabled.');
+    }
     final storagePath = 'company_logos/$companyId/logo.png';
     final ref = _storage.ref(storagePath);
     final uploadTask = await ref.putData(

@@ -135,18 +135,40 @@ class SubscriptionService {
         planName.toLowerCase() == 'business' ||
         planName.toLowerCase() == 'growth';
 
-    // 3. Compute billing details per client specification:
-    // Free Plan: Max 5 active employees, $0.00 bill.
-    // Paid Plan: $0.50 per active employee.
-    final int freeLimit = isPaid ? 0 : 5;
-    final double pricePerEmployee = isPaid ? 0.50 : 0.0;
-    final double monthlyBill = isPaid ? (activeCount * pricePerEmployee) : 0.0;
-    final int chargeableCount = isPaid ? activeCount : max(0, activeCount - freeLimit);
+    // 4. Check if cancellation effective date has passed
+    final cancelAtPeriodEnd = companyData['cancelAtPeriodEnd'] == true;
+    final cancelEffDate = companyData['cancellationEffectiveDate'] != null
+        ? (companyData['cancellationEffectiveDate'] as Timestamp).toDate()
+        : null;
 
-    // 4. Update company document
+    bool effectiveIsPaid = isPaid;
+    if (cancelAtPeriodEnd && cancelEffDate != null && DateTime.now().isAfter(cancelEffDate)) {
+      if (activeCount <= 5) {
+        effectiveIsPaid = false;
+        await companyRef.update({
+          'planName': 'Free',
+          'subscriptionPlan': 'Free',
+          'subscriptionStatus': 'Active',
+          'cancelAtPeriodEnd': false,
+          'cancellationEffectiveDate': null,
+          'cancellationReason': null,
+        });
+      } else {
+        await companyRef.update({
+          'subscriptionStatus': 'Expired',
+        });
+      }
+    }
+
+    final int freeLimit = effectiveIsPaid ? 0 : 5;
+    final double pricePerEmployee = effectiveIsPaid ? 0.50 : 0.0;
+    final double monthlyBill = effectiveIsPaid ? (activeCount * pricePerEmployee) : 0.0;
+    final int chargeableCount = effectiveIsPaid ? activeCount : max(0, activeCount - freeLimit);
+
+    // 5. Update company document
     await companyRef.update({
-      'planName': isPaid ? 'Paid' : 'Free',
-      'subscriptionPlan': isPaid ? 'Paid' : 'Free',
+      'planName': effectiveIsPaid ? 'Paid' : 'Free',
+      'subscriptionPlan': effectiveIsPaid ? 'Paid' : 'Free',
       'freeEmployeeLimit': freeLimit,
       'pricePerEmployee': pricePerEmployee,
       'activeEmployees': activeCount,
@@ -194,16 +216,55 @@ class SubscriptionService {
     final companyRef = _firestore.collection('companies').doc(companyId);
     final targetPlan = newPlanName.trim().toLowerCase() == 'paid' ? 'Paid' : 'Free';
     
+    final nextBilling = DateTime.now().add(const Duration(days: 30));
+
     // Set planName and subscriptionPlan fields
     await companyRef.update({
       'planName': targetPlan,
       'subscriptionPlan': targetPlan,
-      'billingStatus': targetPlan == 'Paid' ? 'Active' : 'Active',
+      'billingStatus': 'Active',
       'subscriptionStatus': 'Active',
+      'cancelAtPeriodEnd': false,
+      'cancellationEffectiveDate': null,
+      'cancellationReason': null,
+      'nextBillingDate': targetPlan == 'Paid' ? Timestamp.fromDate(nextBilling) : null,
       'updatedAt': Timestamp.now(),
     });
 
     // Recalculate metrics immediately
     await recalculateAndSyncSubscription(companyId);
+  }
+
+  /// Request cancellation of Paid Subscription.
+  /// Keeps Paid Plan features active until current billing period ends (nextBillingDate).
+  static Future<void> requestCancellation(String companyId, {String? reason}) async {
+    final companyRef = _firestore.collection('companies').doc(companyId);
+    final companyDoc = await companyRef.get();
+    if (!companyDoc.exists) return;
+
+    final data = companyDoc.data() ?? {};
+    final nextBilling = data['nextBillingDate'] != null
+        ? (data['nextBillingDate'] as Timestamp).toDate()
+        : DateTime.now().add(const Duration(days: 30));
+
+    await companyRef.update({
+      'subscriptionStatus': 'Cancellation Pending',
+      'cancelAtPeriodEnd': true,
+      'cancellationEffectiveDate': Timestamp.fromDate(nextBilling),
+      'cancellationReason': reason ?? 'User requested cancellation',
+      'updatedAt': Timestamp.now(),
+    });
+  }
+
+  /// Resume / Keep Paid Subscription when cancellation is pending.
+  static Future<void> resumeSubscription(String companyId) async {
+    final companyRef = _firestore.collection('companies').doc(companyId);
+    await companyRef.update({
+      'subscriptionStatus': 'Active',
+      'cancelAtPeriodEnd': false,
+      'cancellationEffectiveDate': null,
+      'cancellationReason': null,
+      'updatedAt': Timestamp.now(),
+    });
   }
 }

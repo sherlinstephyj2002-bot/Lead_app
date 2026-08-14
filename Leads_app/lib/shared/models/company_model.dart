@@ -39,6 +39,7 @@ class CompanyModel {
   final bool? isDeleted;
   final String? companyCode;
   final int? employeeCounter;
+  final String? defaultEmployeePassword;
 
   // SaaS Subscription & Billing fields
   final String planName;
@@ -50,6 +51,9 @@ class CompanyModel {
   final String billingStatus;
   final DateTime? nextBillingDate;
   final String subscriptionStatus;
+  final bool cancelAtPeriodEnd;
+  final DateTime? cancellationEffectiveDate;
+  final String? cancellationReason;
 
   // Feature Management / Module Enablement Flags
   final bool isLeadManagementEnabled;
@@ -91,6 +95,7 @@ class CompanyModel {
     this.isDeleted = false,
     this.companyCode,
     this.employeeCounter,
+    this.defaultEmployeePassword,
     
     // SaaS defaults
     this.planName = 'Free',
@@ -102,6 +107,9 @@ class CompanyModel {
     this.billingStatus = 'Active',
     this.nextBillingDate,
     this.subscriptionStatus = 'Active',
+    this.cancelAtPeriodEnd = false,
+    this.cancellationEffectiveDate,
+    this.cancellationReason,
 
     // Feature enablement defaults
     this.isLeadManagementEnabled = true,
@@ -126,12 +134,29 @@ class CompanyModel {
   /// Returns whether the company is on the Free Plan.
   bool get isFreePlan => !isPaidPlan;
 
+  /// Returns whether cancellation is pending at end of billing cycle.
+  bool get isCancellationPending {
+    final status = subscriptionStatus.trim().toLowerCase();
+    return cancelAtPeriodEnd || status == 'cancellation pending' || status == 'cancellation_pending';
+  }
+
+  /// Returns whether paid features and limits are currently active.
+  bool get isPaidAccessActive {
+    if (isPaidPlan) {
+      if (isCancellationPending && cancellationEffectiveDate != null) {
+        return DateTime.now().isBefore(cancellationEffectiveDate!);
+      }
+      return true;
+    }
+    return false;
+  }
+
   /// Centralized ad visibility logic:
   /// - Free Plan: Google Ads enabled (shown in designated dashboard location).
   /// - Paid Plan: Google Ads completely hidden everywhere.
   /// - Safe status handling: Expired / Cancelled -> hide ads.
   bool get showAds {
-    if (isPaidPlan) return false;
+    if (isPaidAccessActive) return false;
     final status = subscriptionStatus.trim().toLowerCase();
     if (status == 'expired' || status == 'cancelled') return false;
     return isFreePlan;
@@ -173,17 +198,21 @@ class CompanyModel {
       isDeleted: map['isDeleted'] ?? false,
       companyCode: map['companyCode'],
       employeeCounter: map['employeeCounter'] ?? 0,
+      defaultEmployeePassword: map['defaultEmployeePassword'] as String?,
       
       // SaaS parsing
-      planName: map['planName'] ?? 'Starter',
+      planName: map['planName'] ?? 'Free',
       freeEmployeeLimit: map['freeEmployeeLimit'] ?? 5,
-      pricePerEmployee: (map['pricePerEmployee'] as num?)?.toDouble() ?? 50.0,
+      pricePerEmployee: (map['pricePerEmployee'] as num?)?.toDouble() ?? 0.50,
       activeEmployees: map['activeEmployees'] ?? 0,
       chargeableEmployees: map['chargeableEmployees'] ?? 0,
       monthlyBill: (map['monthlyBill'] as num?)?.toDouble() ?? 0.0,
-      billingStatus: map['billingStatus'] ?? 'Pending',
+      billingStatus: map['billingStatus'] ?? 'Active',
       nextBillingDate: map['nextBillingDate'] != null ? (map['nextBillingDate'] as Timestamp).toDate() : null,
       subscriptionStatus: map['subscriptionStatus'] ?? 'Active',
+      cancelAtPeriodEnd: map['cancelAtPeriodEnd'] ?? false,
+      cancellationEffectiveDate: map['cancellationEffectiveDate'] != null ? (map['cancellationEffectiveDate'] as Timestamp).toDate() : null,
+      cancellationReason: map['cancellationReason'],
 
       // Feature enablement parsing
       isLeadManagementEnabled: map['isLeadManagementEnabled'] ?? true,
@@ -230,6 +259,7 @@ class CompanyModel {
       'isDeleted': isDeleted,
       'companyCode': companyCode,
       'employeeCounter': employeeCounter,
+      'defaultEmployeePassword': defaultEmployeePassword,
       
       // SaaS serialization
       'planName': planName,
@@ -241,6 +271,9 @@ class CompanyModel {
       'billingStatus': billingStatus,
       'nextBillingDate': nextBillingDate != null ? Timestamp.fromDate(nextBillingDate!) : null,
       'subscriptionStatus': subscriptionStatus,
+      'cancelAtPeriodEnd': cancelAtPeriodEnd,
+      'cancellationEffectiveDate': cancellationEffectiveDate != null ? Timestamp.fromDate(cancellationEffectiveDate!) : null,
+      'cancellationReason': cancellationReason,
 
       // Feature enablement serialization
       'isLeadManagementEnabled': isLeadManagementEnabled,
@@ -285,6 +318,7 @@ class CompanyModel {
     bool? isDeleted,
     String? companyCode,
     int? employeeCounter,
+    String? defaultEmployeePassword,
     
     // SaaS fields
     String? planName,
@@ -296,6 +330,9 @@ class CompanyModel {
     String? billingStatus,
     DateTime? nextBillingDate,
     String? subscriptionStatus,
+    bool? cancelAtPeriodEnd,
+    DateTime? cancellationEffectiveDate,
+    String? cancellationReason,
 
     // Feature enablement fields
     bool? isLeadManagementEnabled,
@@ -337,6 +374,7 @@ class CompanyModel {
       isDeleted: isDeleted ?? this.isDeleted,
       companyCode: companyCode ?? this.companyCode,
       employeeCounter: employeeCounter ?? this.employeeCounter,
+      defaultEmployeePassword: defaultEmployeePassword ?? this.defaultEmployeePassword,
       
       // SaaS copyWith mapping
       planName: planName ?? this.planName,
@@ -348,6 +386,9 @@ class CompanyModel {
       billingStatus: billingStatus ?? this.billingStatus,
       nextBillingDate: nextBillingDate ?? this.nextBillingDate,
       subscriptionStatus: subscriptionStatus ?? this.subscriptionStatus,
+      cancelAtPeriodEnd: cancelAtPeriodEnd ?? this.cancelAtPeriodEnd,
+      cancellationEffectiveDate: cancellationEffectiveDate ?? this.cancellationEffectiveDate,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
 
       // Feature enablement copyWith mapping
       isLeadManagementEnabled: isLeadManagementEnabled ?? this.isLeadManagementEnabled,

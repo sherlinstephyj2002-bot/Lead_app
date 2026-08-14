@@ -167,7 +167,10 @@ class _StaffAttendanceScreenState
                       itemBuilder: (context, index) {
                         final employee = filtered[index];
                         final match = logs.where((log) =>
-                            log.employeeId == employee.uid &&
+                            (log.employeeId == employee.uid ||
+                             log.employeeId == employee.employeeId ||
+                             log.userEmployeeId == employee.uid ||
+                             log.userEmployeeId == employee.employeeId) &&
                             log.checkInTime.year == _selectedDate.year &&
                             log.checkInTime.month == _selectedDate.month &&
                             log.checkInTime.day == _selectedDate.day);

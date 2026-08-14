@@ -55,7 +55,7 @@ class CompanyAdminRepository {
     
     return query.docs
         .map((doc) => UserModel.fromMap(doc.data()))
-        .where((user) => user.status != 'deleted' && user.role != UserRoles.companyAdmin && user.role != UserRoles.superAdmin)
+        .where((user) => user.status != 'deleted' && user.role != UserRoles.companyAdmin)
         .toList();
   }
 

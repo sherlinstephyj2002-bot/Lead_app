@@ -116,7 +116,7 @@ ESSProfileModel _buildProfileFromUser(UserModel? user) {
 
   String roleDesignation = user.role == UserRoles.companyAdmin
       ? 'Company Admin'
-      : (user.role == UserRoles.superAdmin ? 'Super Admin' : 'Employee');
+      : 'Employee';
 
   return ESSProfileModel(
     employeeId: (user.employeeId != null && user.employeeId!.isNotEmpty)

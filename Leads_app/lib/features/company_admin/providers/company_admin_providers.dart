@@ -9,6 +9,7 @@ import '../../../constants/firestore_collections.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/models/user_model.dart';
 import '../../../shared/utils/employee_id_generator.dart';
+import '../../../shared/utils/company_password_helper.dart';
 import '../../../shared/utils/app_validators.dart';
 import '../../../shared/services/email_service.dart';
 import '../../../shared/services/password_encryption.dart';
@@ -380,10 +381,19 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
     final finalEmployeeId = generated.employeeId;
     final companyEmail = generated.companyEmail;
 
-    // 4. Generate temporary password (format Wt@ + 5 random digits)
-    final rand = Random();
-    final digits = List.generate(5, (_) => rand.nextInt(10).toString()).join();
-    final tempPassword = 'Wt@$digits';
+    // 4. Get company default employee password
+    String tempPassword = companyObj?.defaultEmployeePassword ?? '';
+    if (tempPassword.isEmpty) {
+      tempPassword = CompanyPasswordHelper.generateDefaultPassword(
+        activeCompanyName,
+        companyCode: companyCode,
+      );
+      if (companyObj != null) {
+        await _ref.read(companyRepositoryProvider).saveCompany(
+          companyObj.copyWith(defaultEmployeePassword: tempPassword),
+        );
+      }
+    }
 
     final appName = 'EmpOnboarding_${DateTime.now().millisecondsSinceEpoch}';
 
@@ -640,9 +650,21 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
         ? employee.companyEmail!
         : (employee.email.contains('@') ? employee.email : '${empId.toLowerCase()}@$cleanCompName.worktrack');
 
-    final rand = Random();
-    final digits = List.generate(5, (_) => rand.nextInt(10).toString()).join();
-    final tempPassword = 'Wt@$digits';
+    final companyObj = await _ref.read(companyRepositoryProvider).getCompany(adminUser.companyId);
+    final activeCompanyName = companyObj?.name ?? adminUser.companyName;
+
+    String tempPassword = companyObj?.defaultEmployeePassword ?? '';
+    if (tempPassword.isEmpty) {
+      tempPassword = CompanyPasswordHelper.generateDefaultPassword(
+        activeCompanyName,
+        companyCode: companyCode,
+      );
+      if (companyObj != null) {
+        await _ref.read(companyRepositoryProvider).saveCompany(
+          companyObj.copyWith(defaultEmployeePassword: tempPassword),
+        );
+      }
+    }
 
     final appName = 'EmpCreateAuth_${DateTime.now().millisecondsSinceEpoch}';
     FirebaseApp? tempApp;
@@ -701,7 +723,21 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
       throw Exception('NO_CREDENTIALS');
     }
 
-    final newTempPassword = _generateSecurePassword();
+    final companyObj = await _ref.read(companyRepositoryProvider).getCompany(targetUser.companyId);
+    final activeCompanyName = companyObj?.name ?? targetUser.companyName;
+
+    String newTempPassword = companyObj?.defaultEmployeePassword ?? '';
+    if (newTempPassword.isEmpty) {
+      newTempPassword = CompanyPasswordHelper.generateDefaultPassword(
+        activeCompanyName,
+        companyCode: targetUser.companyCode,
+      );
+      if (companyObj != null) {
+        await _ref.read(companyRepositoryProvider).saveCompany(
+          companyObj.copyWith(defaultEmployeePassword: newTempPassword),
+        );
+      }
+    }
     final encryptedPass = targetUser.encryptedPassword ?? (targetUser.tempPassword != null ? PasswordEncryption.encrypt(targetUser.tempPassword!) : null);
 
     if (encryptedPass != null && encryptedPass.isNotEmpty) {

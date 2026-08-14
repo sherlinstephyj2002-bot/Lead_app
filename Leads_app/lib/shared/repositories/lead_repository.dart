@@ -6,6 +6,7 @@ import '../models/lead_model.dart';
 import '../models/followup_model.dart';
 import '../models/lead_attachment_model.dart';
 import '../../constants/firestore_collections.dart';
+import '../../constants/feature_flags.dart';
 
 class LeadPageResult {
   final List<LeadModel> leads;
@@ -74,6 +75,9 @@ class LeadRepository {
     String fileName,
     Uint8List fileBytes,
   ) async {
+    if (!FeatureFlags.enableDocumentUpload) {
+      throw Exception('File upload is currently disabled.');
+    }
     final storagePath = 'leads/$companyId/$leadId/${DateTime.now().millisecondsSinceEpoch}_$fileName';
     final ref = _storage.ref(storagePath);
     final uploadTask = await ref.putData(fileBytes);

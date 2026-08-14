@@ -12,6 +12,7 @@ import '../../../shared/models/lead_model.dart';
 import '../../../shared/models/followup_model.dart';
 import '../../../shared/models/lead_activity_model.dart';
 import '../../../shared/models/lead_attachment_model.dart';
+import '../../../constants/feature_flags.dart';
 
 class LeadDetailScreen extends ConsumerStatefulWidget {
   final String leadId;
@@ -535,27 +536,29 @@ class _LeadDetailScreenState extends ConsumerState<LeadDetailScreen> {
                   Text('Documents & Attachments', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: titleColor, fontFamily: 'Outfit')),
                 ],
               ),
-              IconButton(
-                icon: const Icon(Icons.cloud_upload_outlined, size: 20, color: Color(0xFF5B4CF0)),
-                onPressed: () async {
-                  final result = await FilePicker.pickFiles();
-                  if (result != null && result.files.isNotEmpty) {
-                    final file = result.files.first;
-                    final user = ref.read(authProvider).user;
-                    if (user == null) return;
-                    
-                    final attachment = LeadAttachmentModel(
-                      leadId: _lead.leadId,
-                      companyId: user.companyId,
-                      fileName: file.name,
-                      fileUrl: 'https://example.com/attachments/${file.name}',
-                      uploadedAt: DateTime.now(),
-                    );
-                    await FirebaseFirestore.instance.collection('leadAttachments').add(attachment.toMap());
-                    await _loadAttachments();
-                  }
-                },
-              ),
+              if (FeatureFlags.enableDocumentUpload)
+                IconButton(
+                  icon: const Icon(Icons.cloud_upload_outlined, size: 20, color: Color(0xFF5B4CF0)),
+                  onPressed: () async {
+                    if (!FeatureFlags.enableDocumentUpload) return;
+                    final result = await FilePicker.pickFiles();
+                    if (result != null && result.files.isNotEmpty) {
+                      final file = result.files.first;
+                      final user = ref.read(authProvider).user;
+                      if (user == null) return;
+                      
+                      final attachment = LeadAttachmentModel(
+                        leadId: _lead.leadId,
+                        companyId: user.companyId,
+                        fileName: file.name,
+                        fileUrl: 'https://example.com/attachments/${file.name}',
+                        uploadedAt: DateTime.now(),
+                      );
+                      await FirebaseFirestore.instance.collection('leadAttachments').add(attachment.toMap());
+                      await _loadAttachments();
+                    }
+                  },
+                ),
             ],
           ),
           Divider(height: 16, color: dividerColor),

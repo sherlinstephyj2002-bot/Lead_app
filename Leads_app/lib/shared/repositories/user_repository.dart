@@ -6,6 +6,7 @@ import '../models/employee_request_model.dart';
 import '../models/app_notification_model.dart';
 import '../../constants/firestore_collections.dart';
 import '../../constants/user_roles.dart';
+import '../../constants/feature_flags.dart';
 
 class UserRepository {
   final FirebaseFirestore _firestore;
@@ -60,7 +61,7 @@ class UserRepository {
         .where('companyId', isEqualTo: companyId)
         .get();
     final allUsers = query.docs.map((doc) => UserModel.fromMap(doc.data())).toList();
-    return allUsers.where((u) => u.role != UserRoles.companyAdmin && u.role != UserRoles.superAdmin).toList();
+    return allUsers.where((u) => u.role != UserRoles.companyAdmin).toList();
   }
 
   Future<String> uploadProfileImage(
@@ -68,6 +69,9 @@ class UserRepository {
     String fileName,
     Uint8List fileBytes,
   ) async {
+    if (!FeatureFlags.enableImageUpload) {
+      throw Exception('File upload is currently disabled.');
+    }
     final safeFileName = fileName.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
     final storagePath = 'profiles/$uid/${DateTime.now().millisecondsSinceEpoch}_$safeFileName';
     final ref = _storage.ref(storagePath);
@@ -210,7 +214,7 @@ class UserRepository {
       }
 
       // Fallback for legacy notifications without explicit targetType
-      if (normUserRole == 'company_admin' || normUserRole == 'super_admin') {
+      if (normUserRole == 'company_admin') {
         return true;
       }
 

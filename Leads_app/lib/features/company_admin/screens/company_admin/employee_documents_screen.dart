@@ -8,6 +8,7 @@ import 'package:worktrack/shared/models/user_model.dart';
 import 'package:worktrack/shared/models/app_notification_model.dart';
 import 'package:worktrack/shared/utils/app_validators.dart';
 import 'package:worktrack/constants/user_roles.dart';
+import 'package:worktrack/constants/feature_flags.dart';
 import 'package:worktrack/features/company_admin/models/employee_document_model.dart';
 import 'package:worktrack/features/company_admin/providers/company_admin_providers.dart';
 import 'package:worktrack/shared/widgets/app_user_avatar.dart';
@@ -92,6 +93,9 @@ class _EmployeeDocumentsScreenState extends ConsumerState<EmployeeDocumentsScree
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (!FeatureFlags.enableDocumentUpload)
+              _buildDocumentUploadUnavailableCard(context, isDark),
+
             // Top Explanation Banner
             _buildExplanationBanner(context, isDark, isManagingSelf),
             const SizedBox(height: 20),
@@ -179,6 +183,57 @@ class _EmployeeDocumentsScreenState extends ConsumerState<EmployeeDocumentsScree
                     fontSize: 12,
                     color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
                     height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDocumentUploadUnavailableCard(BuildContext context, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: isDark ? const Color(0xFF3730A3) : const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF3B82F6).withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.cloud_off_rounded, color: Color(0xFF3B82F6), size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Documents',
+                  style: TextStyle(
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Document upload is currently unavailable. This feature will be available in a future update.',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF475569),
+                    height: 1.3,
                   ),
                 ),
               ],
@@ -690,7 +745,7 @@ class _EmployeeDocumentsScreenState extends ConsumerState<EmployeeDocumentsScree
               error: (e, _) => Center(child: Text('Error loading employees: $e')),
               data: (employees) {
                 final filtered = employees.where((emp) {
-                  if (emp.role == UserRoles.companyAdmin || emp.role == UserRoles.superAdmin) {
+                  if (emp.role == UserRoles.companyAdmin) {
                     return false;
                   }
                   if (_searchQuery.isNotEmpty &&

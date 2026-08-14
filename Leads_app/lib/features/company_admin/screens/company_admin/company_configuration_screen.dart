@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../shared/providers/providers.dart';
+import '../../../../shared/models/company_model.dart';
+import '../../../../shared/utils/company_password_helper.dart';
 import 'shift_management_screen.dart';
 import 'holiday_management_screen.dart';
 
@@ -13,6 +16,7 @@ class CompanyConfigurationScreen extends ConsumerStatefulWidget {
 class _CompanyConfigurationScreenState extends ConsumerState<CompanyConfigurationScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isSaving = false;
+  bool _showDefaultPassword = false;
 
   final Set<String> _workingDays = {'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'};
   final Set<String> _weeklyOffs = {'Saturday', 'Sunday'};
@@ -215,6 +219,102 @@ class _CompanyConfigurationScreenState extends ConsumerState<CompanyConfiguratio
               ],
             ),
           ),
+          const SizedBox(height: 24),
+
+          Builder(
+            builder: (context) {
+              final company = ref.watch(companyProvider).value;
+              final adminUser = ref.watch(authProvider).user;
+              final companyName = company?.name ?? adminUser?.companyName ?? '';
+              final defaultPassword = company?.defaultEmployeePassword ??
+                  CompanyPasswordHelper.generateDefaultPassword(companyName, companyCode: company?.companyCode ?? adminUser?.companyCode);
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildCardHeader('Employee Default Login Password', Icons.lock_person_rounded, isDark),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDark ? Theme.of(context).cardColor : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Initial password assigned to all newly created employees. Employees must change this password after their first login.',
+                          style: TextStyle(
+                            fontFamily: 'Outfit',
+                            fontSize: 12,
+                            color: isDark ? Colors.white70 : const Color(0xFF64748B),
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      _showDefaultPassword ? defaultPassword : '•' * defaultPassword.length,
+                                      style: TextStyle(
+                                        fontFamily: 'Outfit',
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                        letterSpacing: _showDefaultPassword ? 0.5 : 2.0,
+                                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: Icon(
+                                        _showDefaultPassword ? Icons.visibility_off : Icons.visibility,
+                                        size: 18,
+                                        color: isDark ? Colors.white70 : const Color(0xFF64748B),
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: () => setState(() => _showDefaultPassword = !_showDefaultPassword),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            ElevatedButton.icon(
+                              onPressed: company == null ? null : () => _showChangeDefaultPasswordDialog(context, company, defaultPassword),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF5B4CF0),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: const Icon(Icons.edit_rounded, size: 16),
+                              label: const Text(
+                                'Change Default Password',
+                                style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
           const SizedBox(height: 28),
 
           SizedBox(
@@ -265,6 +365,100 @@ class _CompanyConfigurationScreenState extends ConsumerState<CompanyConfiguratio
           ),
         ),
       ],
+    );
+  }
+
+  void _showChangeDefaultPasswordDialog(BuildContext context, CompanyModel company, String currentDefault) {
+    final formKey = GlobalKey<FormState>();
+    final passCtrl = TextEditingController(text: currentDefault);
+    bool isSavingPassword = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Row(
+                children: [
+                  Icon(Icons.lock_person_rounded, color: Color(0xFF5B4CF0)),
+                  SizedBox(width: 8),
+                  Text('Change Default Password', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, fontSize: 16)),
+                ],
+              ),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Enter a new default password for future employee accounts. This will not change passwords of existing employees who have already set their personal passwords.',
+                      style: TextStyle(fontFamily: 'Outfit', fontSize: 12, color: Color(0xFF64748B), height: 1.4),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: passCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Default Employee Password',
+                        hintText: 'e.g. Jazz@123',
+                        prefixIcon: Icon(Icons.vpn_key_outlined, size: 18),
+                      ),
+                      validator: CompanyPasswordHelper.validateDefaultPassword,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSavingPassword ? null : () => Navigator.pop(dialogCtx),
+                  child: const Text('Cancel', style: TextStyle(fontFamily: 'Outfit')),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF5B4CF0),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: isSavingPassword
+                      ? null
+                      : () async {
+                          if (formKey.currentState!.validate()) {
+                            setModalState(() => isSavingPassword = true);
+                            try {
+                              final newPass = passCtrl.text.trim();
+                              final updatedCompany = company.copyWith(defaultEmployeePassword: newPass);
+                              await ref.read(companyRepositoryProvider).saveCompany(updatedCompany);
+                              ref.read(companyProvider.notifier).loadCompany();
+                              if (context.mounted) {
+                                Navigator.pop(dialogCtx);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Default employee password updated successfully!'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              setModalState(() => isSavingPassword = false);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Failed to update default password: $e'), backgroundColor: Colors.red),
+                                );
+                              }
+                            }
+                          }
+                        },
+                  child: isSavingPassword
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Save', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

@@ -28,14 +28,18 @@ class AppTheme {
       scaffoldBackgroundColor: lightBgColor,
       cardColor: lightCardColor,
       dialogBackgroundColor: lightCardColor,
-      dialogTheme: const DialogThemeData(
+      dialogTheme: DialogThemeData(
         backgroundColor: lightCardColor,
         surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: lightCardColor,
         modalBackgroundColor: lightCardColor,
         surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
       ),
       dividerTheme: const DividerThemeData(
         color: Color(0xFFE2E8F0),
@@ -132,14 +136,18 @@ class AppTheme {
       scaffoldBackgroundColor: darkBgColor,
       cardColor: darkCardColor,
       dialogBackgroundColor: darkCardColor,
-      dialogTheme: const DialogThemeData(
+      dialogTheme: DialogThemeData(
         backgroundColor: darkCardColor,
         surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: darkCardColor,
         modalBackgroundColor: darkCardColor,
         surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
       ),
       dividerTheme: const DividerThemeData(
         color: Color(0xFF334155),

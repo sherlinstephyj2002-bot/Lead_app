@@ -66,12 +66,22 @@ class DashboardScreen extends ConsumerWidget {
     final totalEmployees = employees.length;
 
     final attendanceToday = attendanceTodayAsync.value ?? [];
-    final presentToday = attendanceToday.where((log) =>
+    final presentToday = <String>{};
+    for (final log in attendanceToday) {
+      if (log.checkInTime.year == today.year &&
+          log.checkInTime.month == today.month &&
+          log.checkInTime.day == today.day) {
+        presentToday.add(log.employeeId);
+        if (log.userEmployeeId != null && log.userEmployeeId!.isNotEmpty) {
+          presentToday.add(log.userEmployeeId!);
+        }
+      }
+    }
+    final presentCount = attendanceToday.where((log) =>
         log.checkInTime.year == today.year &&
         log.checkInTime.month == today.month &&
         log.checkInTime.day == today.day
-    ).map((log) => log.employeeId).toSet();
-    final presentCount = presentToday.length;
+    ).map((log) => log.employeeId).toSet().length;
 
     final leads = leadsState.value ?? [];
     final leadsAddedCount = leads.where((l) => 

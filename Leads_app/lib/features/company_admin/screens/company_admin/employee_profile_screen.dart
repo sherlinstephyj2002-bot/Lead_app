@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:worktrack/constants/user_roles.dart';
+import 'package:worktrack/constants/feature_flags.dart';
 import 'package:worktrack/shared/providers/providers.dart';
 import 'package:worktrack/shared/models/user_model.dart';
 import 'package:worktrack/shared/models/department_model.dart';
@@ -52,6 +53,10 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
   late TextEditingController _ifscCtrl;
   late TextEditingController _panCtrl;
   late TextEditingController _aadhaarCtrl;
+  late TextEditingController _companyNameCtrl;
+  late TextEditingController _companyEmailCtrl;
+  late TextEditingController _companyMobileCtrl;
+  late TextEditingController _companyAddressCtrl;
 
   String? _selectedGender;
   DateTime? _selectedDob;
@@ -91,6 +96,12 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
     _panCtrl = TextEditingController(text: _employeeState.panNumber ?? '');
     _aadhaarCtrl = TextEditingController(text: _employeeState.aadhaarNumber ?? '');
 
+    final company = ref.read(companyProvider).value;
+    _companyNameCtrl = TextEditingController(text: company?.name ?? _employeeState.companyName);
+    _companyEmailCtrl = TextEditingController(text: company?.businessEmail.isNotEmpty == true ? company!.businessEmail : (_employeeState.companyEmail ?? ''));
+    _companyMobileCtrl = TextEditingController(text: company?.companyMobile ?? '');
+    _companyAddressCtrl = TextEditingController(text: company?.address ?? '');
+
     _selectedGender = _employeeState.gender;
     _selectedDob = _employeeState.dateOfBirth;
     _selectedBloodGroup = _employeeState.bloodGroup;
@@ -113,6 +124,10 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
     _ifscCtrl.dispose();
     _panCtrl.dispose();
     _aadhaarCtrl.dispose();
+    _companyNameCtrl.dispose();
+    _companyEmailCtrl.dispose();
+    _companyMobileCtrl.dispose();
+    _companyAddressCtrl.dispose();
     super.dispose();
   }
 
@@ -181,6 +196,14 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
   }
 
   Future<void> _pickAndUploadPhoto() async {
+    if (!FeatureFlags.enableImageUpload) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File upload is currently disabled.')),
+        );
+      }
+      return;
+    }
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.image,
@@ -261,7 +284,117 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
     }
   }
 
+  Future<void> _saveCompanyAdminProfileChanges() async {
+    setState(() => isSavingProfile = true);
+    try {
+      final adminName = _nameCtrl.text.trim();
+      final adminPhone = _phoneCtrl.text.trim();
+      final adminEmail = _personalEmailCtrl.text.trim();
+      final companyName = _companyNameCtrl.text.trim();
+      final companyEmail = _companyEmailCtrl.text.trim();
+      final companyPhone = _companyMobileCtrl.text.trim();
+      final companyAddress = _companyAddressCtrl.text.trim();
+
+      if (adminName.isEmpty) {
+        setState(() => isSavingProfile = false);
+        _showSnackBar('Admin Name cannot be empty.', isError: true);
+        return;
+      }
+      if (adminPhone.isNotEmpty) {
+        final err = AppValidators.validateMobileNumber(adminPhone, isRequired: false);
+        if (err != null) {
+          setState(() => isSavingProfile = false);
+          _showSnackBar(err, isError: true);
+          return;
+        }
+      }
+      if (adminEmail.isNotEmpty) {
+        final err = AppValidators.validatePersonalEmail(adminEmail, isRequired: false);
+        if (err != null) {
+          setState(() => isSavingProfile = false);
+          _showSnackBar(err, isError: true);
+          return;
+        }
+      }
+      if (companyEmail.isNotEmpty) {
+        final err = AppValidators.validateBusinessEmail(companyEmail, isRequired: false);
+        if (err != null) {
+          setState(() => isSavingProfile = false);
+          _showSnackBar(err, isError: true);
+          return;
+        }
+      }
+      if (companyPhone.isNotEmpty) {
+        final err = AppValidators.validateCompanyPhone(companyPhone, isRequired: false);
+        if (err != null) {
+          setState(() => isSavingProfile = false);
+          _showSnackBar(err, isError: true);
+          return;
+        }
+      }
+
+      final updatedUser = _employeeState.copyWith(
+        name: adminName,
+        phoneNumber: adminPhone,
+        personalEmail: adminEmail.isNotEmpty ? adminEmail : _employeeState.personalEmail,
+      );
+
+      final currentUser = ref.read(authProvider).user;
+      if (currentUser != null && currentUser.uid == _employeeState.uid) {
+        await ref.read(authProvider.notifier).updateProfile(
+          name: updatedUser.name,
+          phoneNumber: updatedUser.phoneNumber,
+        );
+      } else {
+        await ref.read(userRepositoryProvider).updateUserProfile(
+          updatedUser.uid,
+          name: updatedUser.name,
+          phoneNumber: updatedUser.phoneNumber,
+        );
+      }
+
+      final company = ref.read(companyProvider).value;
+      if (company != null) {
+        final updatedCompany = company.copyWith(
+          name: companyName.isNotEmpty ? companyName : company.name,
+          businessEmail: companyEmail,
+          companyMobile: companyPhone,
+          address: companyAddress,
+        );
+        await ref.read(companyProvider.notifier).updateCompany(updatedCompany);
+      }
+
+      if (mounted) {
+        setState(() {
+          _employeeState = updatedUser;
+          isEditMode = false;
+          isSavingProfile = false;
+        });
+        _showSnackBar('Company Admin Profile updated successfully.');
+      }
+    } catch (e) {
+      setState(() => isSavingProfile = false);
+      _showSnackBar('Error updating admin profile: $e', isError: true);
+    }
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message, style: const TextStyle(fontFamily: 'Inter')),
+        backgroundColor: isError ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _saveProfileChanges() async {
+    final isCompanyAdminProfile = _employeeState.role == UserRoles.companyAdmin;
+    if (isCompanyAdminProfile) {
+      await _saveCompanyAdminProfileChanges();
+      return;
+    }
     setState(() => isSavingProfile = true);
 
     try {
@@ -360,13 +493,338 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
     }
   }
 
+  Widget _buildCompanyAdminProfileContent(
+    BuildContext context,
+    UserModel targetEmployee,
+    bool isDark,
+    bool isSelfProfile,
+  ) {
+    final company = ref.watch(companyProvider).value;
+    final companyCode = company?.companyCode ?? targetEmployee.companyCode ?? 'N/A';
+    final companyName = company?.name ?? targetEmployee.companyName;
+    final adminCode = targetEmployee.adminCode;
+
+    final companyEmail = company?.businessEmail.isNotEmpty == true
+        ? company!.businessEmail
+        : (targetEmployee.companyEmail ?? 'Not Provided');
+    final companyPhone = company?.companyMobile.isNotEmpty == true
+        ? company!.companyMobile
+        : 'Not Provided';
+
+    final addressParts = [
+      if (company?.address != null && company!.address.trim().isNotEmpty) company.address.trim(),
+      if (company?.city != null && company!.city.trim().isNotEmpty) company.city.trim(),
+      if (company?.state != null && company!.state.trim().isNotEmpty) company.state.trim(),
+      if (company?.country != null && company!.country.trim().isNotEmpty) company.country.trim(),
+      if (company?.zip != null && company!.zip.trim().isNotEmpty) company.zip.trim(),
+    ];
+    final companyAddressStr = addressParts.isNotEmpty ? addressParts.join(', ') : 'Not Provided';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. Header Card with Admin Avatar & Badges
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24.0),
+            decoration: BoxDecoration(
+              color: isDark ? Theme.of(context).cardColor : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark ? const Color(0xFF334155) : const Color(0xFFC8C4D8).withOpacity(0.3),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF111827).withOpacity(0.04),
+                  blurRadius: 20,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'ACTIVE',
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF007834),
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                ),
+                Stack(
+                  children: [
+                    Container(
+                      width: 90,
+                      height: 90,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF5B4CF0).withOpacity(0.2),
+                          width: 3,
+                        ),
+                      ),
+                      child: ClipOval(
+                        child: AppUserAvatar(
+                          user: targetEmployee,
+                          companyId: targetEmployee.companyId,
+                          radius: 40,
+                          backgroundColor: Colors.transparent,
+                          iconColor: const Color(0xFF5B4CF0),
+                        ),
+                      ),
+                    ),
+                    if (FeatureFlags.enableImageUpload)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Material(
+                          color: const Color(0xFF5B4CF0),
+                          elevation: 3,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            onTap: _pickAndUploadPhoto,
+                            customBorder: const CircleBorder(),
+                            child: const Padding(
+                              padding: EdgeInsets.all(6.0),
+                              child: Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                SelectableText(
+                  targetEmployee.name,
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    color: isDark ? Colors.white : const Color(0xFF191C1F),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF5B4CF0).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.badge_rounded, size: 14, color: Color(0xFF5B4CF0)),
+                          const SizedBox(width: 6),
+                          SelectableText(
+                            'Admin Code: $adminCode',
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF5B4CF0),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.shield_rounded, size: 14, color: Color(0xFF10B981)),
+                          SizedBox(width: 6),
+                          Text(
+                            'COMPANY ADMIN',
+                            style: TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Change Password Shortcut for Admin
+          if (isSelfProfile)
+            Row(
+              children: [
+                _buildQuickActionButton(
+                  icon: Icons.lock_rounded,
+                  label: 'Change Password',
+                  onPressed: () => _showChangePasswordModal(context),
+                ),
+              ],
+            ),
+          if (isSelfProfile) const SizedBox(height: 20),
+
+          // 2. Admin Information Section
+          _buildSectionCard(
+            title: 'Admin Information',
+            titleIcon: Icons.admin_panel_settings_rounded,
+            children: [
+              if (isEditMode) ...[
+                TextFormField(
+                  controller: _nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Admin Name *',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Admin Contact Number',
+                    prefixIcon: Icon(Icons.phone_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _personalEmailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Admin Email',
+                    prefixIcon: Icon(Icons.email_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Admin Code (Immutable)',
+                    prefixIcon: Icon(Icons.lock_outline, color: Colors.grey),
+                    filled: true,
+                    fillColor: Color(0xFFF1F5F9),
+                  ),
+                  child: Text(
+                    adminCode,
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                  ),
+                ),
+              ] else ...[
+                _buildInfoRow('Admin Code', adminCode, showCopyIcon: true),
+                _buildDivider(),
+                _buildInfoRow('Admin Name', targetEmployee.name),
+                _buildDivider(),
+                _buildInfoRow('Admin Email', targetEmployee.email, showCopyIcon: true),
+                _buildDivider(),
+                _buildInfoRow('Contact Number', targetEmployee.phoneNumber ?? 'Not Provided'),
+              ],
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // 3. Company Information Section
+          _buildSectionCard(
+            title: 'Company Information',
+            titleIcon: Icons.business_rounded,
+            children: [
+              if (isEditMode) ...[
+                TextFormField(
+                  controller: _companyNameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Company Name *',
+                    prefixIcon: Icon(Icons.domain_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Company Code (Immutable)',
+                    prefixIcon: Icon(Icons.lock_outline, color: Colors.grey),
+                    filled: true,
+                    fillColor: Color(0xFFF1F5F9),
+                  ),
+                  child: Text(
+                    companyCode,
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _companyEmailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Company Email',
+                    prefixIcon: Icon(Icons.markunread_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _companyMobileCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Company Phone',
+                    prefixIcon: Icon(Icons.phone_android_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _companyAddressCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Company Address',
+                    prefixIcon: Icon(Icons.location_on_outlined),
+                  ),
+                ),
+              ] else ...[
+                _buildInfoRow('Company Name', companyName),
+                _buildDivider(),
+                _buildInfoRow('Company Code', companyCode, showCopyIcon: true),
+                _buildDivider(),
+                _buildInfoRow('Company Email', companyEmail, showCopyIcon: true),
+                _buildDivider(),
+                _buildInfoRow('Company Phone', companyPhone),
+                _buildDivider(),
+                _buildInfoRow('Company Address', companyAddressStr),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUser = ref.watch(authProvider).user;
     final targetEmployee = _employeeState;
 
     final isSameCompany = currentUser != null &&
-        (currentUser.role == UserRoles.superAdmin || currentUser.companyId == targetEmployee.companyId);
+        (currentUser.companyId == targetEmployee.companyId);
 
     final isSelfProfile = currentUser != null &&
         ((currentUser.uid == targetEmployee.uid) ||
@@ -375,8 +833,7 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
           currentUser.employeeId == targetEmployee.employeeId));
 
     final isAdminOrHR = currentUser != null && isSameCompany &&
-        (currentUser.role == UserRoles.superAdmin ||
-         currentUser.role == UserRoles.companyAdmin ||
+        (currentUser.role == UserRoles.companyAdmin ||
          currentUser.role == UserRoles.hrAdmin ||
          currentUser.role == UserRoles.hrExecutive ||
          currentUser.role == UserRoles.hr);
@@ -399,12 +856,15 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
         : 'Never';
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isCompanyAdminProfile = targetEmployee.role == UserRoles.companyAdmin;
 
     return Scaffold(
       backgroundColor: isDark ? Theme.of(context).scaffoldBackgroundColor : const Color(0xFFF8F9FD),
       appBar: AppBar(
         title: Text(
-          isEditMode ? 'Edit Employee Profile' : 'Employee Profile',
+          isEditMode
+              ? (isCompanyAdminProfile ? 'Edit Company Admin Profile' : 'Edit Employee Profile')
+              : (isCompanyAdminProfile ? 'Company Admin Profile' : 'Employee Profile'),
           style: const TextStyle(
             fontFamily: 'Inter',
             fontWeight: FontWeight.bold,
@@ -463,8 +923,10 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
           : Center(
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 900),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20.0),
+                child: isCompanyAdminProfile
+                    ? _buildCompanyAdminProfileContent(context, targetEmployee, isDark, isSelfProfile)
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(20.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -526,23 +988,24 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
                                     ),
                                   ),
                                 ),
-                                Positioned(
-                                  bottom: 0,
-                                  right: 0,
-                                  child: Material(
-                                    color: const Color(0xFF5B4CF0),
-                                    elevation: 3,
-                                    shape: const CircleBorder(),
-                                    child: InkWell(
-                                      onTap: _pickAndUploadPhoto,
-                                      customBorder: const CircleBorder(),
-                                      child: const Padding(
-                                        padding: EdgeInsets.all(6.0),
-                                        child: Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
+                                if (FeatureFlags.enableImageUpload)
+                                  Positioned(
+                                    bottom: 0,
+                                    right: 0,
+                                    child: Material(
+                                      color: const Color(0xFF5B4CF0),
+                                      elevation: 3,
+                                      shape: const CircleBorder(),
+                                      child: InkWell(
+                                        onTap: _pickAndUploadPhoto,
+                                        customBorder: const CircleBorder(),
+                                        child: const Padding(
+                                          padding: EdgeInsets.all(6.0),
+                                          child: Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
                               ],
                             ),
                             const SizedBox(height: 14),
@@ -704,7 +1167,7 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
                                   },
                                 ),
                               // Employee Self-Service Shortcuts (Hidden for Admin Profile)
-                              if (isSelfProfile && currentUser.role != UserRoles.companyAdmin && currentUser.role != UserRoles.superAdmin) ...[
+                              if (isSelfProfile && currentUser.role != UserRoles.companyAdmin) ...[
                                 _buildQuickActionButton(
                                   icon: Icons.calendar_today_rounded,
                                   label: 'Attendance',

@@ -9,30 +9,32 @@ class AttendanceRepository {
       : _firestore = firestore ?? FirebaseFirestore.instance;
 
   // =========================
-  // Get Attendance Logs (TEST VERSION)
+  // Get Attendance Logs
   // =========================
   Future<List<AttendanceModel>> getAttendanceLogs(
     String companyId, {
     String? employeeId,
   }) async {
     try {
-      Query query = _firestore
+      final snap = await _firestore
           .collection(FirestoreCollections.attendance)
-          .where('companyId', isEqualTo: companyId);
+          .where('companyId', isEqualTo: companyId)
+          .get();
 
-      if (employeeId != null) {
-        query = query.where('employeeId', isEqualTo: employeeId);
-      }
-
-      final snap = await query.get();
-
-      final list = snap.docs
+      var list = snap.docs
           .map(
             (doc) => AttendanceModel.fromMap(
-              doc.data() as Map<String, dynamic>,
+              doc.data(),
             ),
           )
           .toList();
+
+      if (employeeId != null && employeeId.isNotEmpty) {
+        list = list.where((log) =>
+            log.employeeId == employeeId ||
+            log.userEmployeeId == employeeId
+        ).toList();
+      }
 
       list.sort((a, b) => b.checkInTime.compareTo(a.checkInTime));
       return list;
@@ -54,25 +56,12 @@ class AttendanceRepository {
   ) async {
     try {
       final now = DateTime.now();
-      final startOfDay = DateTime(
-        now.year,
-        now.month,
-        now.day,
-      );
-
-      final endOfDay = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        23,
-        59,
-        59,
-      );
+      final startOfDay = DateTime(now.year, now.month, now.day);
+      final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
 
       final snap = await _firestore
           .collection(FirestoreCollections.attendance)
           .where('companyId', isEqualTo: companyId)
-          .where('employeeId', isEqualTo: employeeId)
           .where(
             'checkInTime',
             isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
@@ -81,16 +70,21 @@ class AttendanceRepository {
             'checkInTime',
             isLessThanOrEqualTo: Timestamp.fromDate(endOfDay),
           )
-          .limit(1)
           .get();
 
-      if (snap.docs.isEmpty) {
-        return null;
+      if (snap.docs.isEmpty) return null;
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final logEmpId = (data['employeeId'] ?? '').toString();
+        final logUserEmpId = (data['userEmployeeId'] ?? data['employeeCode'] ?? '').toString();
+
+        if (logEmpId == employeeId || logUserEmpId == employeeId) {
+          return AttendanceModel.fromMap(data);
+        }
       }
 
-      return AttendanceModel.fromMap(
-        snap.docs.first.data(),
-      );
+      return null;
     } catch (e) {
       print("======================================");
       print("🔥 ERROR IN getTodayAttendance()");

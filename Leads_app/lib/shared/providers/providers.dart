@@ -1812,8 +1812,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     
     final compId = 'mock-company-id';
     final normalizedRole = UserModel.normalizeRole(role);
-    final companyName = normalizedRole == UserRoles.superAdmin ? 'WorkTrack HQ' : 'ABC Electricals';
-    final companyCode = normalizedRole == UserRoles.superAdmin ? 'HQ' : 'MOCK';
+    final companyName = 'ABC Electricals';
+    final companyCode = 'MOCK';
     
     // Save mock company document to Firestore asynchronously
     final mockCompany = CompanyModel(
@@ -1828,18 +1828,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
       debugPrint("🚨 Warning: Failed to save mock company document: $e");
     });
     
-    final mockEmployeeId = normalizedRole == UserRoles.superAdmin 
-        ? 'SUPERADMIN' 
-        : (normalizedRole == UserRoles.companyAdmin ? 'ADMIN' : 'EMP001');
+    final mockEmployeeId = normalizedRole == UserRoles.companyAdmin ? 'ADMIN' : 'EMP001';
 
     final mockHiddenEmail = '${companyCode.toLowerCase()}.${mockEmployeeId.toLowerCase()}@worktrack.internal';
 
     final mockUser = UserModel(
       uid: 'mock-uid-${normalizedRole.replaceAll('_', '-')}',
       email: mockHiddenEmail,
-      name: normalizedRole == UserRoles.superAdmin 
-          ? 'Super Admin' 
-          : (normalizedRole == UserRoles.companyAdmin ? 'Company Admin' : 'Employee User'),
+      name: normalizedRole == UserRoles.companyAdmin ? 'Company Admin' : 'Employee User',
       role: normalizedRole,
       companyId: compId,
       companyName: companyName,
@@ -2114,6 +2110,7 @@ class AttendanceNotifier extends StateNotifier<AttendanceState> {
         attendanceId: const Uuid().v4(),
         companyId: user.companyId,
         employeeId: user.uid,
+        userEmployeeId: user.employeeId ?? user.uid,
         employeeName: user.name,
         checkInTime: now,
         latitude: lat,
@@ -3368,7 +3365,13 @@ final companyAttendanceTodayProvider = FutureProvider.autoDispose<List<Attendanc
   final user = ref.watch(authProvider).user;
   if (user == null) return [];
   final attendanceRepo = ref.watch(attendanceRepositoryProvider);
-  return await attendanceRepo.getAttendanceLogs(user.companyId);
+  final logs = await attendanceRepo.getAttendanceLogs(user.companyId);
+  final now = DateTime.now();
+  return logs.where((l) =>
+      l.checkInTime.year == now.year &&
+      l.checkInTime.month == now.month &&
+      l.checkInTime.day == now.day
+  ).toList();
 });
 
 // Customers Provider & Notifier

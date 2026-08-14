@@ -16,6 +16,7 @@ import '../../../shared/providers/providers.dart';
 import '../../../shared/services/pdf_service.dart';
 import '../../../shared/services/file_download_service.dart';
 import '../../../shared/utils/csv_export_helper.dart';
+import '../../../shared/theme/app_responsive.dart';
 import '../../../constants/user_roles.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
@@ -360,7 +361,15 @@ class _LeadsReportTab extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 8),
-          Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B), fontFamily: 'Outfit')),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: AppResponsive.fontSize(context, 24, mobileSize: 18),
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : const Color(0xFF1E293B),
+              fontFamily: 'Outfit',
+            ),
+          ),
           const SizedBox(height: 4),
           Text(
             subtext,
@@ -962,11 +971,12 @@ class _AttendanceReportTabState extends ConsumerState<_AttendanceReportTab> {
   }
 
   String _getEmployeeIdDisplay(String employeeId, List<UserModel> employees) {
-    final emp = employees.firstWhere(
-      (e) => e.employeeId == employeeId || e.uid == employeeId,
-      orElse: () => UserModel(uid: '', email: '', name: '', role: '', companyId: '', companyName: '', createdAt: DateTime.now()),
-    );
-    return emp.employeeId ?? 'N/A';
+    if (employees.isEmpty) return 'Employee ID unavailable';
+    final empMatches = employees.where((e) => e.employeeId == employeeId || e.uid == employeeId);
+    if (empMatches.isNotEmpty) {
+      return empMatches.first.displayEmployeeId;
+    }
+    return employeeId.isNotEmpty ? employeeId : 'Employee ID unavailable';
   }
 
   String _formatWorkingHours(AttendanceModel log) {

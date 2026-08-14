@@ -29,17 +29,53 @@ class SubscriptionScreen extends ConsumerStatefulWidget {
 class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   bool _isProcessing = false;
 
-  void _upgradePlan(BuildContext context, CompanyModel company, String targetPlanName) async {
+  void _handlePlanSwitch(BuildContext context, CompanyModel company, String targetPlanName) async {
     final isPaidTarget = targetPlanName.toLowerCase() == 'paid';
+    
+    if (!isPaidTarget) {
+      // User is attempting to move to Free Plan
+      if (company.activeEmployees > 5) {
+        showDialog(
+          context: context,
+          builder: (dialogCtx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
+                SizedBox(width: 8),
+                Text('Cannot Switch to Free Plan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            content: Text(
+              'Your company currently has ${company.activeEmployees} active employees, which exceeds the Free Plan limit of 5 active employees.\n\nPlease deactivate excess employees (reducing active employees to 5 or fewer) before moving to the Free Plan, or continue with the Paid Plan.',
+              style: const TextStyle(height: 1.4, fontSize: 13),
+            ),
+            actions: [
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white),
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text('Understand & Close'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      if (company.isPaidPlan) {
+        _showCancelConfirmationDialog(context, company);
+        return;
+      }
+    }
+
+    // Upgrading to Paid Plan
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Switch Plan to $targetPlanName'),
-        content: Text(
-          isPaidTarget
-              ? 'Upgrade to the Paid Plan? You will be charged USD 0.50 per active employee each month, allowing you to add more than 5 active employees and removing Google Ads.'
-              : 'Switch to the Free Plan? Up to 5 active employees are allowed, and Google Ads will be enabled.',
+        title: const Text('Upgrade to Paid Plan'),
+        content: const Text(
+          'Upgrade to the Paid Plan? You will be charged USD 0.50 per active employee each month, allowing you to add unlimited active employees and enjoying an ad-free experience.',
         ),
         actions: [
           TextButton(
@@ -52,11 +88,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               Navigator.pop(dialogCtx);
               setState(() => _isProcessing = true);
               try {
-                await SubscriptionService.updatePlan(company.companyId, targetPlanName);
+                await SubscriptionService.updatePlan(company.companyId, 'Paid');
                 await ref.read(companyProvider.notifier).loadCompany();
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Successfully switched to the $targetPlanName Plan.'), backgroundColor: Colors.green),
+                    const SnackBar(content: Text('Successfully upgraded to the Paid Plan.'), backgroundColor: Colors.green),
                   );
                 }
               } catch (e) {
@@ -69,10 +105,274 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                 setState(() => _isProcessing = false);
               }
             },
-            child: const Text('Confirm'),
+            child: const Text('Confirm Upgrade'),
           ),
         ],
       ),
+    );
+  }
+
+  void _showCancelConfirmationDialog(BuildContext context, CompanyModel company) {
+    final billingDateStr = company.nextBillingDate != null
+        ? DateFormat('dd MMMM yyyy').format(company.nextBillingDate!)
+        : 'the end of the current billing period';
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.remove_circle_outline_rounded, color: Color(0xFFDC2626), size: 24),
+            SizedBox(width: 8),
+            Text('Cancel Paid Subscription?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your Paid Plan will remain active until $billingDateStr.\n\nYou will continue to have access to Paid Plan features until then. After that date, your company will move to the Free Plan.',
+              style: const TextStyle(fontSize: 13, height: 1.4, color: Color(0xFF334155)),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, color: Color(0xFFDC2626), size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No immediate downgrade will occur. Features remain accessible until your billing period ends.',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF991B1B), fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Keep Paid Plan', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFDC2626), foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              setState(() => _isProcessing = true);
+              try {
+                await SubscriptionService.requestCancellation(company.companyId);
+                await ref.read(companyProvider.notifier).loadCompany();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Subscription cancellation requested. Paid features remain active until billing period ends.'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error requesting cancellation: $e'), backgroundColor: Colors.red),
+                  );
+                }
+              } finally {
+                setState(() => _isProcessing = false);
+              }
+            },
+            child: const Text('Confirm Cancellation', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showManageSubscriptionModal(BuildContext context, CompanyModel company) {
+    final formatCurrency = NumberFormat.simpleCurrency(name: 'USD', decimalDigits: 2);
+    final billingDateStr = company.nextBillingDate != null
+        ? DateFormat('dd MMM yyyy').format(company.nextBillingDate!)
+        : 'End of Billing Month';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final cardBg = isDark ? Theme.of(context).cardColor : Colors.white;
+        final titleColor = isDark ? Colors.white : const Color(0xFF1E293B);
+
+        return Container(
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.settings_suggest_rounded, color: Color(0xFF5B4CF0), size: 24),
+                      const SizedBox(width: 8),
+                      Text('Manage Subscription', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: titleColor)),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(modalCtx),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              
+              // Status Row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Subscription Status', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: company.isCancellationPending
+                          ? const Color(0xFFFEF3C7)
+                          : const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      company.isCancellationPending ? 'CANCELLATION PENDING' : 'ACTIVE (PAID)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: company.isCancellationPending ? const Color(0xFFD97706) : const Color(0xFF007834),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              _buildMetricRow('Current Active Employees', '${company.activeEmployees} active'),
+              _buildMetricRow('Rate per Active Employee', '\$0.50 / month'),
+              _buildMetricRow('Next Billing Date', billingDateStr),
+              _buildMetricRow('Estimated Monthly Amount', formatCurrency.format(company.monthlyBill)),
+              const SizedBox(height: 16),
+              
+              if (company.isCancellationPending) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFCD34D)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Cancellation Scheduled',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFB45309), fontSize: 13),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Your Paid Plan remains active until $billingDateStr. After this date, your company will move to the Free Plan.',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: const Text('Keep Paid Plan', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      Navigator.pop(modalCtx);
+                      setState(() => _isProcessing = true);
+                      try {
+                        await SubscriptionService.resumeSubscription(company.companyId);
+                        await ref.read(companyProvider.notifier).loadCompany();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Paid Plan resumed successfully.'), backgroundColor: Colors.green),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error resuming subscription: $e'), backgroundColor: Colors.red),
+                          );
+                        }
+                      } finally {
+                        setState(() => _isProcessing = false);
+                      }
+                    },
+                  ),
+                ),
+              ] else ...[
+                if (company.monthlyBill > 0)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF5B4CF0),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.payment_rounded, size: 18),
+                      label: const Text('Pay Current Bill', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () {
+                        Navigator.pop(modalCtx);
+                        _simulatePayNow(context, company);
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFDC2626),
+                      side: const BorderSide(color: Color(0xFFFCA5A5)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.cancel_outlined, size: 18),
+                    label: const Text('Cancel Paid Subscription', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () {
+                      Navigator.pop(modalCtx);
+                      _showCancelConfirmationDialog(context, company);
+                    },
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -155,7 +455,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'This is a secure billing sandbox simulation. No actual funds will be transferred.',
+                    'This is a secure billing sandbox simulation. Payment updates your billing history and invoice record.',
                     style: TextStyle(fontSize: 11, color: Colors.grey, fontStyle: FontStyle.italic),
                   ),
                 ],
@@ -246,10 +546,74 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               final isPaid = company.isPaidPlan;
               final capacityPercentage = isPaid ? 1.0 : (company.activeEmployees / 5).clamp(0.0, 1.0);
               final adsText = company.showAds ? 'ENABLED' : 'DISABLED (AD-FREE)';
+              final planStatusText = company.isCancellationPending
+                  ? 'CANCELLATION PENDING'
+                  : (isPaid ? 'PAID PLAN' : 'FREE PLAN');
 
               final mainContent = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Cancellation Pending Alert Banner
+                  if (company.isCancellationPending) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFBEB),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFFCD34D)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Subscription Cancellation Pending',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFFB45309)),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Your Paid Plan remains active until ${company.nextBillingDate != null ? DateFormat('dd MMM yyyy').format(company.nextBillingDate!) : 'the end of your billing cycle'}. After that date, your company will move to the Free Plan.',
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF92400E)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isAdmin) ...[
+                            const SizedBox(width: 12),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF10B981),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: () async {
+                                setState(() => _isProcessing = true);
+                                try {
+                                  await SubscriptionService.resumeSubscription(company.companyId);
+                                  await ref.read(companyProvider.notifier).loadCompany();
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Paid Plan resumed successfully.'), backgroundColor: Colors.green),
+                                    );
+                                  }
+                                } finally {
+                                  setState(() => _isProcessing = false);
+                                }
+                              },
+                              child: const Text('Keep Paid Plan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+
                   // Overview Stats Grid
                   LayoutBuilder(
                     builder: (context, constraints) {
@@ -262,7 +626,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                         physics: const NeverScrollableScrollPhysics(),
                         childAspectRatio: cols == 1 ? 4 : 2.4,
                         children: [
-                          _buildOverviewCard('Current Plan', isPaid ? 'PAID PLAN' : 'FREE PLAN', Icons.verified_rounded, const Color(0xFF5B4CF0)),
+                          _buildOverviewCard('Current Plan', planStatusText, Icons.verified_rounded, company.isCancellationPending ? const Color(0xFFD97706) : const Color(0xFF5B4CF0)),
                           _buildOverviewCard(
                             'Active Employees',
                             isPaid ? '${company.activeEmployees} Active' : '${company.activeEmployees} / 5 Active',
@@ -345,7 +709,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                         mainAxisSpacing: 16,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        childAspectRatio: planCols == 1 ? 1.6 : 1.1,
+                        childAspectRatio: planCols == 1 ? 1.8 : 1.95,
                         children: [
                           _buildPlanTierCard(
                             title: 'Free Plan',
@@ -354,8 +718,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                             description: 'Includes up to 5 active employees with Google Ads enabled. Maximum limit enforced.',
                             isActive: !isPaid,
                             isAdmin: isAdmin,
-                            buttonLabel: !isPaid ? 'Current Plan' : 'Downgrade to Free',
-                            onSelect: () => _upgradePlan(context, company, 'Free'),
+                            buttonLabel: !isPaid ? 'Current Plan' : 'Free Plan (5 Limit)',
+                            onSelect: () => _handlePlanSwitch(context, company, 'Free'),
                           ),
                           _buildPlanTierCard(
                             title: 'Paid Plan',
@@ -364,8 +728,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                             description: 'Allows unlimited active employees at USD 0.50 / active employee. Completely ad-free experience.',
                             isActive: isPaid,
                             isAdmin: isAdmin,
-                            buttonLabel: isPaid ? 'Current Plan' : 'Upgrade to Paid Plan',
-                            onSelect: () => _upgradePlan(context, company, 'Paid'),
+                            buttonLabel: isPaid ? 'Manage Subscription' : 'Upgrade to Paid Plan',
+                            onSelect: () => isPaid ? _showManageSubscriptionModal(context, company) : _handlePlanSwitch(context, company, 'Paid'),
                           ),
                         ],
                       );
@@ -487,7 +851,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   ),
                 ],
               ),
-              if (isAdmin && isPaid && company.monthlyBill > 0)
+              if (isAdmin)
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF5B4CF0),
@@ -496,9 +860,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
-                  icon: const Icon(Icons.payment_rounded, size: 16),
-                  label: const Text('Pay Bill', style: TextStyle(fontWeight: FontWeight.bold)),
-                  onPressed: () => _simulatePayNow(context, company),
+                  icon: Icon(isPaid ? Icons.settings_suggest_rounded : Icons.star_rounded, size: 16),
+                  label: Text(isPaid ? 'Manage Subscription' : 'Upgrade Plan', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: () => isPaid ? _showManageSubscriptionModal(context, company) : _handlePlanSwitch(context, company, 'Paid'),
                 ),
             ],
           ),
@@ -761,10 +1125,10 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         : (isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0));
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: cardBg,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: borderCol,
           width: isActive ? 2 : 1,
@@ -772,11 +1136,12 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: titleColor)),
+              Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: titleColor)),
               if (isActive)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -788,30 +1153,32 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                 ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Text(employeesText, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0), fontSize: 13)),
           const SizedBox(height: 4),
           Text(priceText, style: TextStyle(color: subtitleColor, fontSize: 12, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Text(
             description,
-            style: TextStyle(color: subtitleColor, fontSize: 12, height: 1.4),
+            style: TextStyle(color: subtitleColor, fontSize: 12, height: 1.35),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
           ),
           const Spacer(),
           if (isAdmin) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-              height: 44,
+              height: 40,
               child: ElevatedButton(
                 onPressed: isActive ? null : onSelect,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isActive ? const Color(0xFFE2E8F0) : const Color(0xFF5B4CF0),
                   foregroundColor: isActive ? const Color(0xFF64748B) : Colors.white,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                child: Text(buttonLabel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                child: Text(buttonLabel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
               ),
             ),
           ],

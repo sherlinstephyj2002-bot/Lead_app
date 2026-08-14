@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../constants/user_roles.dart';
+import '../../../constants/feature_flags.dart';
 import '../../../shared/services/password_validator.dart';
 import '../../../shared/utils/app_validators.dart';
 
@@ -89,6 +90,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   Future<void> _pickLogo() async {
+    if (!FeatureFlags.enableImageUpload) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File upload is currently disabled.')),
+        );
+      }
+      return;
+    }
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.image,

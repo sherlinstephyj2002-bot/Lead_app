@@ -108,12 +108,31 @@ class UserModel {
     this.aadhaarNumber,
   });
 
+  /// Dedicated Admin Code for Company Admin (e.g., ADM-JAS001)
+  String get adminCode {
+    if (employeeId != null && employeeId!.toUpperCase().startsWith('ADM-')) {
+      return employeeId!;
+    }
+    final code = (companyCode != null && companyCode!.isNotEmpty) ? companyCode! : '001';
+    return 'ADM-$code';
+  }
+
+  /// Display Employee ID (business code e.g. AB04, or Admin Code e.g. ADM-JC).
+  String get displayEmployeeId {
+    if (role == UserRoles.companyAdmin) {
+      return adminCode;
+    }
+    if (employeeId != null && employeeId!.trim().isNotEmpty) {
+      return employeeId!.trim();
+    }
+    return 'Employee ID unavailable';
+  }
+
   /// Normalize database values to code constants
   static String normalizeRole(String rawRole) {
     switch (rawRole.trim().toLowerCase()) {
       case 'super admin':
       case 'super_admin':
-        return UserRoles.superAdmin;
       case 'company admin':
       case 'company_admin':
         return UserRoles.companyAdmin;
@@ -146,8 +165,6 @@ class UserModel {
   /// Denormalize code constants to legacy database values
   static String denormalizeRole(String normalizedRole) {
     switch (normalizedRole) {
-      case UserRoles.superAdmin:
-        return 'Super Admin';
       case UserRoles.companyAdmin:
         return 'Company Admin';
       case UserRoles.employee:

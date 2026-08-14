@@ -51,18 +51,6 @@ class PermissionService {
 
 // Map containing default permissions for each role
 const Map<String, List<String>> defaultRolePermissions = {
-  UserRoles.superAdmin: [
-    'employee_create', 'employee_edit', 'employee_delete', 'employee_view',
-    'department_create', 'department_edit', 'department_delete',
-    'attendance_view', 'attendance_approve', 'attendance_correct',
-    'leave_apply', 'leave_approve', 'leave_reject',
-    'payroll_view', 'payroll_generate', 'payroll_approve', 'payroll_manage',
-    'reports_view', 'reports_export', 'settings_manage',
-    'lead_view', 'lead_create', 'lead_edit', 'lead_delete', 'lead_convert_order',
-    'followup_view', 'followup_create', 'followup_edit', 'followup_complete', 'followup_delete',
-    'order_view', 'order_create', 'order_edit', 'order_delete', 'order_close', 'order_cancel',
-    'task_view', 'task_create', 'task_edit', 'task_delete', 'task_assign', 'task_complete', 'task_reassign'
-  ],
   UserRoles.companyAdmin: [
     'employee_create', 'employee_edit', 'employee_delete', 'employee_view',
     'department_create', 'department_edit', 'department_delete',
@@ -307,7 +295,7 @@ final permissionServiceProvider = Provider<PermissionService>((ref) {
   
   final authState = ref.watch(authProvider);
   final user = authState.user;
-  if (user != null && user.role == UserRoles.superAdmin) {
+  if (user != null && user.role == UserRoles.companyAdmin) {
     return PermissionService(defaultRolePermissions[user.role] ?? []);
   }
   

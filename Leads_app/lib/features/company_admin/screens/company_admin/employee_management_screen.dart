@@ -76,8 +76,7 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
   Widget build(BuildContext context) {
     final currentUser = ref.watch(authProvider).user;
     if (currentUser == null ||
-        (currentUser.role != UserRoles.superAdmin &&
-         currentUser.role != UserRoles.companyAdmin &&
+        (currentUser.role != UserRoles.companyAdmin &&
          currentUser.role != UserRoles.hrAdmin &&
          currentUser.role != UserRoles.hrExecutive)) {
       return const Scaffold(
@@ -341,7 +340,7 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                 ),
                 data: (employees) {
                   final filteredEmployees = employees.where((emp) {
-                    if (emp.role == UserRoles.companyAdmin || emp.role == UserRoles.superAdmin) return false;
+                    if (emp.role == UserRoles.companyAdmin) return false;
                     if (_selectedDeptFilter != 'All' && emp.department != _selectedDeptFilter) return false;
                     if (_selectedDesigFilter != 'All' && emp.designation != _selectedDesigFilter) return false;
                     if (_selectedStatusFilter != 'All' && emp.status.toLowerCase() != _selectedStatusFilter.toLowerCase()) return false;
@@ -749,9 +748,6 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
         return UserRoles.teamLeader;
       case 'employee':
         return UserRoles.employee;
-      case 'super_admin':
-      case 'super admin':
-        return UserRoles.superAdmin;
       default:
         return val;
     }
@@ -773,8 +769,6 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
         return 'Team Leader';
       case UserRoles.employee:
         return 'Employee';
-      case UserRoles.superAdmin:
-        return 'Super Admin';
       default:
         if (value.isEmpty) return '';
         return value.split('_').map((word) {
@@ -913,7 +907,6 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                 : null;
 
             final roleItems = [
-              UserRoles.superAdmin,
               UserRoles.companyAdmin,
               UserRoles.hrAdmin,
               UserRoles.hrExecutive,
@@ -1019,6 +1012,26 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                                         ),
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  const Divider(height: 1, color: Color(0xFFC7D2FE)),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Initial Login Password',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white70 : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    "This employee will receive the company's default initial password. The employee will be required to change it after their first login.",
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF3730A3),
+                                      height: 1.3,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -1545,9 +1558,9 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Row(
             children: [
-              Icon(Icons.vpn_key_rounded, color: Colors.green),
+              Icon(Icons.check_circle_rounded, color: Colors.green),
               SizedBox(width: 8),
-              Text('Employee Credentials', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('Employee Created Successfully', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             ],
           ),
           content: Column(
@@ -1555,8 +1568,8 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'A Firebase Authentication account has been created for this employee. They will log in using their Employee ID and Password.',
-                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                'An account has been created for this employee. The employee will use these credentials for initial login and will be required to change password.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
               ),
               const SizedBox(height: 16),
               const Text('Company Code', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
@@ -1573,23 +1586,23 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF4F46E5)),
               ),
               const SizedBox(height: 12),
-              const Text('Internal Company Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
+              const Text('Company Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
               const SizedBox(height: 4),
               SelectableText(
                 companyEmail,
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
               ),
               const SizedBox(height: 12),
-              const Text('Temporary Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
+              const Text('Initial Password', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF64748B))),
               const SizedBox(height: 4),
               SelectableText(
                 password,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.red),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF5B4CF0)),
               ),
               const SizedBox(height: 16),
               const Text(
-                'Please share these credentials with the Employee.',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green),
+                'Please provide these initial login credentials securely to the employee.',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green, height: 1.3),
               ),
             ],
           ),
@@ -1598,7 +1611,7 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
               icon: const Icon(Icons.copy_rounded, size: 18),
               label: const Text('Copy'),
               onPressed: () {
-                final text = 'Company Code: $companyCode\nEmployee ID: $employeeId\nInternal Company Email: $companyEmail\nTemporary Password: $password';
+                final text = 'Company Code: $companyCode\nEmployee ID: $employeeId\nCompany Email: $companyEmail\nInitial Password: $password';
                 Clipboard.setData(ClipboardData(text: text));
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Credentials copied to clipboard.')),

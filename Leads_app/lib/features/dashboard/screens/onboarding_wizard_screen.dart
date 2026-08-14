@@ -139,6 +139,10 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
 
   // Handle logo image upload to Firebase Storage
   Future<void> _uploadLogo() async {
+    if (!FeatureFlags.enableImageUpload) {
+      _showSnackBar('File upload is currently disabled.', isError: true);
+      return;
+    }
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
     if (pickedFile == null) return;

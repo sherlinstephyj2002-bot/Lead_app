@@ -39,14 +39,6 @@ class _GoogleAccountChooserSheetState extends State<GoogleAccountChooserSheet> {
       'signedOut': true,
     },
     {
-      'email': 'superadmin.demo@gmail.com',
-      'name': 'Super Admin Demo',
-      'role': UserRoles.superAdmin,
-      'initial': 'S',
-      'avatarColor': const Color(0xFF66BB6A), // Green
-      'signedOut': false,
-    },
-    {
       'email': 'testuser@gmail.com',
       'name': 'Test User',
       'role': UserRoles.companyAdmin,
