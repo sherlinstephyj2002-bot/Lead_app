@@ -13,8 +13,8 @@ class InitialSetupScreen extends StatefulWidget {
 
 class _InitialSetupScreenState extends State<InitialSetupScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _nameController = TextEditingController(text: 'SuperAdmin');
+  final _emailController = TextEditingController(text: 'superadmin.worktrack@example.com');
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
@@ -153,7 +153,7 @@ class _InitialSetupScreenState extends State<InitialSetupScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Initial Super Admin Setup',
+                      'Initial SuperAdmin Setup',
                       style: theme.textTheme.headlineMedium?.copyWith(
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.5,
@@ -162,7 +162,7 @@ class _InitialSetupScreenState extends State<InitialSetupScreen> {
                     const SizedBox(height: 8),
                     Text(
                       hasExistingAdmin
-                          ? 'Setup is disabled because a Super Admin account already exists.'
+                          ? 'Setup is disabled because a SuperAdmin account already exists.'
                           : 'Configure the primary platform administrator account.',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.bodyMedium?.copyWith(
@@ -198,7 +198,7 @@ class _InitialSetupScreenState extends State<InitialSetupScreen> {
                                     ),
                                     const SizedBox(height: 16),
                                     const Text(
-                                      'Super Admin Exists',
+                                      'SuperAdmin Exists',
                                       style: TextStyle(
                                         fontSize: 20,
                                         fontWeight: FontWeight.bold,
@@ -206,7 +206,7 @@ class _InitialSetupScreenState extends State<InitialSetupScreen> {
                                     ),
                                     const SizedBox(height: 12),
                                     const Text(
-                                      'A Super Admin account has already been registered on this system. Public setup is disabled to protect platform security.',
+                                      'A SuperAdmin account has already been registered on this system. Public setup is disabled to protect platform security.',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(color: Colors.white70),
                                     ),
@@ -219,7 +219,7 @@ class _InitialSetupScreenState extends State<InitialSetupScreen> {
                                           Navigator.of(context).pushReplacementNamed(AppRoutes.login);
                                         },
                                         icon: const Icon(Icons.arrow_back_rounded),
-                                        label: const Text('Back to Super Admin Login'),
+                                        label: const Text('Back to SuperAdmin Login'),
                                       ),
                                     ),
                                   ],
@@ -257,14 +257,14 @@ class _InitialSetupScreenState extends State<InitialSetupScreen> {
                                         textInputAction: TextInputAction.next,
                                         decoration: const InputDecoration(
                                           labelText: 'Super Admin Email',
-                                          prefixIcon: Icon(Icons.email_outlined),
-                                          hintText: 'admin@platform.com',
+                                          prefixIcon: const Icon(Icons.email_outlined),
+                                          hintText: 'superadmin@worktrack.local',
                                         ),
                                         validator: (value) {
                                           if (value == null || value.trim().isEmpty) {
                                             return 'Please enter your email address';
                                           }
-                                          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                                          if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,10}$')
                                               .hasMatch(value.trim())) {
                                             return 'Please enter a valid email address';
                                           }

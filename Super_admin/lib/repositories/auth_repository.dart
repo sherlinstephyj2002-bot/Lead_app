@@ -16,10 +16,23 @@ class AuthRepository {
     return _auth.currentUser;
   }
 
+  /// Maps internal/development email formats to valid Firebase Auth REST API formats if necessary
+  String _mapFirebaseEmail(String email) {
+    final clean = email.trim().toLowerCase();
+    if (clean == 'superadmin@worktrack.local' || clean == 'admin@worktrack.local') {
+      return 'superadmin.worktrack@gmail.com';
+    }
+    if (clean.endsWith('.local')) {
+      return clean.replaceAll('.local', '@worktrackapp.com');
+    }
+    return clean;
+  }
+
   /// Authenticate user using email and password
   Future<UserCredential> login(String email, String password) async {
+    final targetEmail = _mapFirebaseEmail(email);
     return await _auth.signInWithEmailAndPassword(
-      email: email.trim(),
+      email: targetEmail,
       password: password,
     );
   }
@@ -40,17 +53,47 @@ class AuthRepository {
 
   /// Send a password reset email to the specified address
   Future<void> sendPasswordResetEmail(String email) async {
-    await _auth.sendPasswordResetEmail(email: email.trim());
+    final targetEmail = _mapFirebaseEmail(email);
+    await _auth.sendPasswordResetEmail(email: targetEmail);
+  }
+
+  /// Strip SuperAdmin role from any personal email accounts in Firestore to ensure complete isolation
+  Future<void> sanitizePersonalSuperAdminRoles() async {
+    try {
+      final snap = await _firestore.collection(FirestoreCollections.users).get();
+      for (var doc in snap.docs) {
+        final data = doc.data();
+        final email = (data['email'] ?? '').toString().trim().toLowerCase();
+        final role = (data['role'] ?? '').toString();
+        if (email.isNotEmpty &&
+            email != 'superadmin@worktrack.local' &&
+            email != 'superadmin.worktrack@gmail.com' &&
+            (role == 'SuperAdmin' || role == 'Super Admin' || role == 'super_admin')) {
+          print("[SUPERADMIN_AUTH] Purging SuperAdmin role association from personal account: $email");
+          await _firestore.collection(FirestoreCollections.users).doc(doc.id).update({
+            'role': 'CompanyAdmin',
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    } catch (e) {
+      print("[SUPERADMIN_AUTH] Sanitization exception: $e");
+    }
   }
 
   /// Count how many Super Admin accounts exist in Firestore
   Future<int> getSuperAdminCount() async {
     final snap1 = await _firestore
         .collection(FirestoreCollections.users)
+        .where('role', isEqualTo: 'SuperAdmin')
+        .get();
+
+    final snap2 = await _firestore
+        .collection(FirestoreCollections.users)
         .where('role', isEqualTo: 'Super Admin')
         .get();
-        
-    final snap2 = await _firestore
+
+    final snap3 = await _firestore
         .collection(FirestoreCollections.users)
         .where('role', isEqualTo: UserRoles.superAdmin)
         .get();
@@ -60,6 +103,9 @@ class AuthRepository {
       uids.add(doc.id);
     }
     for (var doc in snap2.docs) {
+      uids.add(doc.id);
+    }
+    for (var doc in snap3.docs) {
       uids.add(doc.id);
     }
     return uids.length;
@@ -98,30 +144,9 @@ class AuthRepository {
     return false;
   }
 
-  /// Safe check method to get masked email of existing super admin for dev/testing without exposing passwords
+  /// Safe check method to get masked email of existing super admin (Returns null to ensure no email exposure)
   Future<String?> getSuperAdminMaskedEmail() async {
-    final count = await getSuperAdminCount();
-    if (count == 0) return null;
-
-    final snap = await _firestore
-        .collection(FirestoreCollections.users)
-        .where('role', isEqualTo: 'Super Admin')
-        .get();
-
-    if (snap.docs.isNotEmpty) {
-      final email = (snap.docs.first.data()['email'] ?? '').toString();
-      if (email.contains('@')) {
-        final parts = email.split('@');
-        final namePart = parts[0];
-        final domainPart = parts[1];
-        if (namePart.length > 2) {
-          return '${namePart.substring(0, 2)}***@$domainPart';
-        }
-        return '***@$domainPart';
-      }
-      return 'Registered';
-    }
-    return 'Registered';
+    return null;
   }
 
   /// One-time initial Super Admin setup. Rejects if a Super Admin already exists.
@@ -136,10 +161,11 @@ class AuthRepository {
     }
 
     final cleanEmail = email.trim().toLowerCase();
+    final targetFbEmail = _mapFirebaseEmail(cleanEmail);
 
     // Create user in Firebase Auth
     final userCredential = await _auth.createUserWithEmailAndPassword(
-      email: cleanEmail,
+      email: targetFbEmail,
       password: password,
     );
 
@@ -164,6 +190,24 @@ class AuthRepository {
         .set(superAdminUser.toMap());
 
     return userCredential;
+  }
+
+  /// Change SuperAdmin password after re-authenticating with current password
+  Future<void> changePassword(String currentPassword, String newPassword) async {
+    final user = _auth.currentUser;
+    if (user == null || user.email == null) {
+      throw Exception("No authenticated SuperAdmin session found.");
+    }
+
+    // Re-authenticate user
+    final credential = EmailAuthProvider.credential(
+      email: user.email!,
+      password: currentPassword,
+    );
+    await user.reauthenticateWithCredential(credential);
+
+    // Update password in Firebase Auth
+    await user.updatePassword(newPassword);
   }
 }
 

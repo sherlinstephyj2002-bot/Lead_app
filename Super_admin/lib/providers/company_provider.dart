@@ -7,6 +7,7 @@ class CompanyProvider with ChangeNotifier {
 
   List<CompanyModel> _companies = [];
   Map<String, int> _employeeCounts = {};
+  int _totalUsersCount = 0;
   bool _isLoading = false;
   bool _isUpdating = false;
   String? _errorMessage;
@@ -24,6 +25,7 @@ class CompanyProvider with ChangeNotifier {
 
   // Getters
   List<CompanyModel> get companies => _companies;
+  int get totalUsersCount => _totalUsersCount;
   bool get isLoading => _isLoading;
   bool get isUpdating => _isUpdating;
   String? get errorMessage => _errorMessage;
@@ -77,6 +79,7 @@ class CompanyProvider with ChangeNotifier {
 
     try {
       final fetchedCompanies = await _companyRepository.getCompanies();
+      final userCount = await _companyRepository.getTotalUserCount();
       final counts = <String, int>{};
       
       for (final comp in fetchedCompanies) {
@@ -86,6 +89,7 @@ class CompanyProvider with ChangeNotifier {
 
       _companies = fetchedCompanies;
       _employeeCounts = counts;
+      _totalUsersCount = userCount;
       _isLoading = false;
       notifyListeners();
     } catch (e) {

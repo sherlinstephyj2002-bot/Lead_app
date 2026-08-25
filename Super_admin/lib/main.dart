@@ -11,6 +11,7 @@ import 'repositories/company_repository.dart';
 import 'providers/company_provider.dart';
 import 'repositories/company_tenant_repository.dart';
 import 'providers/company_tenant_provider.dart';
+import 'providers/feature_flags_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +39,10 @@ class MyApp extends StatelessWidget {
           create: (context) => AuthProvider(context.read<AuthRepository>()),
           update: (_, repository, previous) => previous ?? AuthProvider(repository),
         ),
+        // Inject FeatureFlagsProvider
+        ChangeNotifierProvider<FeatureFlagsProvider>(
+          create: (_) => FeatureFlagsProvider(),
+        ),
         // Inject CompanyRepository
         Provider<CompanyRepository>(
           create: (_) => CompanyRepository(),
@@ -58,7 +63,7 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'WorkTrack Super Admin',
+        title: 'WorkTrack SuperAdmin',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
         initialRoute: AppRoutes.splash,

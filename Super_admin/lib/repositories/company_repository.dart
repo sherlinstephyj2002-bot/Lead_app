@@ -25,14 +25,33 @@ class CompanyRepository {
     }
   }
 
+  /// Calculates the total user count across the entire platform using an aggregate query
+  Future<int> getTotalUserCount() async {
+    try {
+      final snap = await _firestore.collection(FirestoreCollections.users).count().get();
+      return snap.count ?? 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+
   /// Calculates the active employee count of a company using an aggregate query
   Future<int> getEmployeeCount(String companyId) async {
     try {
-      final query = _firestore
+      final snap1 = await _firestore
           .collection(FirestoreCollections.users)
-          .where('companyId', isEqualTo: companyId);
-      final countSnap = await query.count().get();
-      return countSnap.count ?? 0;
+          .where('companyId', isEqualTo: companyId)
+          .count()
+          .get();
+      final count1 = snap1.count ?? 0;
+      if (count1 > 0) return count1;
+
+      final snap2 = await _firestore
+          .collection(FirestoreCollections.users)
+          .where('tenantId', isEqualTo: companyId)
+          .count()
+          .get();
+      return snap2.count ?? 0;
     } catch (e) {
       print("Error counting employees for company $companyId: $e");
       return 0; // Fallback to 0 in case of error

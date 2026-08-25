@@ -64,7 +64,7 @@ class _AccessDeniedScreenState extends State<AccessDeniedScreen> {
               Container(
                 constraints: const BoxConstraints(maxWidth: 480),
                 child: Text(
-                  'Your account does not possess the required Super Admin privileges to view this portal. If you believe this is an error, please contact your database administrator.',
+                  'Your account does not possess the required SuperAdmin privileges to view this portal. If you believe this is an error, please contact your database administrator.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.7),

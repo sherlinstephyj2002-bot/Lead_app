@@ -31,9 +31,180 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     super.dispose();
   }
 
+  String _getPlanEmployeeLimit(String planName) {
+    final clean = planName.trim().toLowerCase();
+    if (clean.contains('free')) return '10';
+    if (clean.contains('basic')) return '25';
+    if (clean.contains('standard')) return '50';
+    if (clean.contains('enterprise')) return 'Unlimited';
+    return '10';
+  }
+
+  void _showEditPlanDialog(BuildContext context, CompanyModel company) {
+    String selectedPlan = company.subscriptionPlan;
+    String selectedStatus = company.status;
+    bool isSaving = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final theme = Theme.of(context);
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF0F172A),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: const BorderSide(color: Color(0xFF334155)),
+              ),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: theme.primaryColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.edit_note_rounded, color: theme.primaryColor),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Edit Subscription — ${company.name}',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'SaaS Tenant ID: ${company.companyId}',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 460,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Subscription Plan Tier', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: ['Free Tier', 'Basic Plan', 'Standard Plan', 'Enterprise Plan', 'Free', 'Basic', 'Standard', 'Enterprise'].contains(selectedPlan) ? selectedPlan : 'Free Tier',
+                      dropdownColor: const Color(0xFF1E293B),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        fillColor: const Color(0xFF1E293B),
+                        filled: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'Free Tier', child: Text('Free Tier (10 Employees Limit)')),
+                        DropdownMenuItem(value: 'Basic Plan', child: Text('Basic Plan (25 Employees Limit)')),
+                        DropdownMenuItem(value: 'Standard Plan', child: Text('Standard Plan (50 Employees Limit)')),
+                        DropdownMenuItem(value: 'Enterprise Plan', child: Text('Enterprise Plan (Unlimited Quota)')),
+                      ],
+                      onChanged: (val) => setState(() => selectedPlan = val!),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text('Subscription Account Status', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: ['Active', 'Suspended'].contains(selectedStatus) ? selectedStatus : 'Active',
+                      dropdownColor: const Color(0xFF1E293B),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        fillColor: const Color(0xFF1E293B),
+                        filled: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'Active', child: Text('Active (Full Access)')),
+                        DropdownMenuItem(value: 'Suspended', child: Text('Suspended (Restricted Access)')),
+                      ],
+                      onChanged: (val) => setState(() => selectedStatus = val!),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSaving ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: theme.primaryColor),
+                  onPressed: isSaving
+                      ? null
+                      : () async {
+                          setState(() => isSaving = true);
+                          final companyProvider = Provider.of<CompanyProvider>(context, listen: false);
+                          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                          final adminEmail = authProvider.userModel?.email ?? 'superadmin@worktrack.local';
+
+                          // 1. Upgrade/update plan in Firestore
+                          await companyProvider.upgradeCompanyPlan(
+                            companyId: company.companyId,
+                            companyName: company.name,
+                            planName: selectedPlan,
+                            performedBy: adminEmail,
+                          );
+
+                          // 2. Update status if changed
+                          if (selectedStatus != company.status) {
+                            if (selectedStatus == 'Active') {
+                              await companyProvider.activateCompany(
+                                companyId: company.companyId,
+                                companyName: company.name,
+                                performedBy: adminEmail,
+                              );
+                            } else if (selectedStatus == 'Suspended') {
+                              await companyProvider.suspendCompany(
+                                companyId: company.companyId,
+                                companyName: company.name,
+                                performedBy: adminEmail,
+                              );
+                            }
+                          }
+
+                          if (!context.mounted) return;
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.check_circle_outline_rounded, color: Colors.white),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: Text('Subscription for "${company.name}" updated successfully!')),
+                                ],
+                              ),
+                              backgroundColor: const Color(0xFF10B981),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                  child: isSaving
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Save Subscription Changes'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showSubscriptionDetails(BuildContext context, CompanyModel company, int empCount) {
     final theme = Theme.of(context);
-    final isFree = company.subscriptionPlan.toLowerCase().contains('free');
+    final limit = _getPlanEmployeeLimit(company.subscriptionPlan);
 
     showDialog(
       context: context,
@@ -85,8 +256,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                 // Resource Usage & Limits
                 Text('Resource Usage & Limits', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold, color: theme.primaryColor)),
                 const SizedBox(height: 12),
-                _buildModalRow('Employee Usage', '$empCount / ${isFree ? 10 : (company.subscriptionPlan == 'Standard' ? 50 : 'Unlimited')}'),
-                _buildModalRow('Storage Usage', '0 MB / ${isFree ? '1 GB' : '50 GB'}'),
+                _buildModalRow('Employee Usage', '$empCount / $limit Active Employees'),
+                _buildModalRow('Storage Usage', '0 MB / Unlimited'),
                 _buildModalRow('GeoFence Module', company.geofenceLat != null ? 'Configured (${company.geofenceRadius}m)' : 'Not Configured'),
                 const SizedBox(height: 20),
 
@@ -101,8 +272,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                     _buildModuleChip('Attendance'),
                     _buildModuleChip('Leave'),
                     _buildModuleChip('Payroll'),
-                    if (!isFree) _buildModuleChip('Leads'),
-                    if (!isFree) _buildModuleChip('Orders'),
+                    _buildModuleChip('Leads'),
+                    _buildModuleChip('Orders'),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -177,7 +348,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
     final companies = companyProvider.companies;
     final isLoading = companyProvider.isLoading;
 
-    final adminEmail = authProvider.userModel?.email ?? 'super_admin@platform.com';
+    final adminEmail = authProvider.userModel?.email ?? 'superadmin@worktrack.local';
 
     // Compute Subscription Overview Metrics
     final totalCompanies = companies.length;
@@ -197,7 +368,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
           c.name.toLowerCase().contains(_searchController.text.toLowerCase()) ||
           c.companyId.toLowerCase().contains(_searchController.text.toLowerCase());
 
-      final matchesPlan = _planFilter == 'All' || c.subscriptionPlan.toLowerCase() == _planFilter.toLowerCase();
+      final matchesPlan = _planFilter == 'All' || c.subscriptionPlan.toLowerCase().contains(_planFilter.toLowerCase());
       final matchesStatus = _statusFilter == 'All' || c.status.toLowerCase() == _statusFilter.toLowerCase();
 
       return matchesSearch && matchesPlan && matchesStatus;
@@ -326,6 +497,7 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                                     items: const [
                                       DropdownMenuItem(value: 'All', child: Text('Plan: All')),
                                       DropdownMenuItem(value: 'Free', child: Text('Plan: Free')),
+                                      DropdownMenuItem(value: 'Basic', child: Text('Plan: Basic')),
                                       DropdownMenuItem(value: 'Standard', child: Text('Plan: Standard')),
                                       DropdownMenuItem(value: 'Enterprise', child: Text('Plan: Enterprise')),
                                     ],
@@ -352,13 +524,14 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                                     ],
                                     rows: filteredCompanies.map((c) {
                                       final empCount = companyProvider.getEmployeeCount(c.companyId);
+                                      final limit = _getPlanEmployeeLimit(c.subscriptionPlan);
                                       return DataRow(
                                         cells: [
                                           DataCell(Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold))),
                                           DataCell(Text(c.companyId)),
                                           DataCell(_buildPlanBadge(c.subscriptionPlan)),
                                           DataCell(_buildStatusBadge(c.status)),
-                                          DataCell(Text('$empCount users')),
+                                          DataCell(Text('$empCount / $limit', style: const TextStyle(fontWeight: FontWeight.bold))),
                                           DataCell(Text(DateFormat('MMM dd, yyyy').format(c.createdAt))),
                                           DataCell(
                                             Row(
@@ -370,15 +543,8 @@ class _SubscriptionsScreenState extends State<SubscriptionsScreen> {
                                                 ),
                                                 IconButton(
                                                   icon: const Icon(Icons.edit_outlined, size: 20),
-                                                  tooltip: 'Change Subscription Plan',
-                                                  onPressed: () {
-                                                    companyProvider.upgradeCompanyPlan(
-                                                      companyId: c.companyId,
-                                                      companyName: c.name,
-                                                      planName: c.subscriptionPlan == 'Free' ? 'Standard' : 'Enterprise',
-                                                      performedBy: adminEmail,
-                                                    );
-                                                  },
+                                                  tooltip: 'Edit Subscription Plan',
+                                                  onPressed: () => _showEditPlanDialog(context, c),
                                                 ),
                                               ],
                                             ),

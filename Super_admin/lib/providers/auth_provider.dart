@@ -44,13 +44,10 @@ class AuthProvider with ChangeNotifier {
   /// Checks if any Super Admin account exists in Firestore
   Future<void> checkSuperAdminExists() async {
     try {
+      await _authRepository.sanitizePersonalSuperAdminRoles();
       _superAdminCount = await _authRepository.getSuperAdminCount();
       _hasSuperAdminAccount = _superAdminCount > 0;
-      if (_hasSuperAdminAccount) {
-        _superAdminMaskedEmail = await _authRepository.getSuperAdminMaskedEmail();
-      } else {
-        _superAdminMaskedEmail = null;
-      }
+      _superAdminMaskedEmail = null;
       notifyListeners();
     } catch (_) {
       // In case of network/permission issue, keep default
@@ -58,7 +55,7 @@ class AuthProvider with ChangeNotifier {
   }
 
   /// Checks the current authentication status and loads the user model.
-  /// If the user is authenticated but not a super_admin, logs them out.
+  /// If the user is authenticated but not the dedicated superadmin account, logs them out immediately.
   Future<bool> checkAuthStatus() async {
     _setLoading(true);
     _setError(null);
@@ -72,16 +69,19 @@ class AuthProvider with ChangeNotifier {
         return false;
       }
 
-      final UserModel? fetchedUser = await _authRepository.getUserData(fbUser.uid);
-      if (fetchedUser == null) {
-        _setError("Super Admin account not found.");
+      // Enforce dedicated SuperAdmin email check & purge legacy personal account sessions
+      final userEmail = fbUser.email?.trim().toLowerCase() ?? '';
+      if (userEmail != 'superadmin@worktrack.local' &&
+          userEmail != 'superadmin.worktrack@gmail.com') {
+        debugPrint('[SUPERADMIN_AUTH] Purging legacy personal account session on app start for: $userEmail');
         await _authRepository.logout();
         _userModel = null;
         _setLoading(false);
         return false;
       }
 
-      if (fetchedUser.role != UserRoles.superAdmin) {
+      final UserModel? fetchedUser = await _authRepository.getUserData(fbUser.uid);
+      if (fetchedUser == null || fetchedUser.role != UserRoles.superAdmin) {
         _setError("Access Denied: You do not have super admin privileges.");
         await _authRepository.logout();
         _userModel = null;
@@ -105,18 +105,109 @@ class AuthProvider with ChangeNotifier {
   Future<bool> login(String email, String password) async {
     _setLoading(true);
     _setError(null);
+    final cleanEmail = email.trim().toLowerCase();
+
+    debugPrint('====================================================');
+    debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 1: Login button clicked');
+    debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 2: Submitted email: "$cleanEmail"');
+    debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 3: Auth Source: Firebase Authentication & Cloud Firestore (users collection)');
+
+    // Auto-seed dedicated SuperAdmin & migrate password if logging in with superadmin@worktrack.local and 1q2w3e4r
+    if (cleanEmail == 'superadmin@worktrack.local' && (password == '1q2w3e4r' || password == 'WorkTrack@Admin2026!')) {
+      try {
+        debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 4: Attempting authentication with Firebase Auth...');
+        final credentials = await _authRepository.login(cleanEmail, password);
+        final fbUser = credentials.user;
+        if (fbUser != null) {
+          debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 4: User existence check: SUCCESS (UID: ${fbUser.uid})');
+          debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 5: Password validation: SUCCESS');
+
+          var fetchedUser = await _authRepository.getUserData(fbUser.uid);
+          if (fetchedUser == null) {
+            debugPrint('[SUPERADMIN_AUTH_DEBUG] Firestore user record missing. Initializing SuperAdmin profile doc...');
+            await _authRepository.registerInitialSuperAdmin(
+              name: 'SuperAdmin',
+              email: cleanEmail,
+              password: password,
+            );
+            fetchedUser = await _authRepository.getUserData(fbUser.uid);
+          }
+
+          if (fetchedUser != null && (fetchedUser.role == UserRoles.superAdmin || fetchedUser.role == 'SuperAdmin')) {
+            debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 6: Role validation: SUCCESS (Role: ${fetchedUser.role})');
+            debugPrint('[SUPERADMIN_AUTH_DEBUG] AUTHENTICATION COMPLETE -> Redirecting to Dashboard');
+            debugPrint('====================================================');
+            _userModel = fetchedUser;
+            _setLoading(false);
+            return true;
+          }
+        }
+      } on fb_auth.FirebaseAuthException catch (e) {
+        debugPrint('[SUPERADMIN_AUTH_DEBUG] Initial Auth Attempt Exception: ${e.code} — ${e.message}');
+        if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+          // Attempt legacy password login and migrate password to 1q2w3e4r
+          try {
+            debugPrint('[SUPERADMIN_AUTH_DEBUG] Attempting legacy password migration...');
+            final legacyCreds = await _authRepository.login(cleanEmail, 'WorkTrack@Admin2026!');
+            final fbUser = legacyCreds.user;
+            if (fbUser != null) {
+              await _authRepository.changePassword('WorkTrack@Admin2026!', '1q2w3e4r');
+              _userModel = await _authRepository.getUserData(fbUser.uid);
+              debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 5: Password migrated & verified successfully');
+              debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 6: Role validation: SUCCESS');
+              debugPrint('====================================================');
+              _setLoading(false);
+              return true;
+            }
+          } catch (migErr) {
+            debugPrint('[SUPERADMIN_AUTH_DEBUG] Legacy migration attempt failed: $migErr');
+          }
+        }
+
+        if (e.code == 'user-not-found' || e.code == 'invalid-credential' || e.code == 'wrong-password' || e.code == 'invalid-email') {
+          try {
+            debugPrint('[SUPERADMIN_AUTH_DEBUG] Creating dedicated SuperAdmin account in Firebase Auth & Firestore...');
+            await _authRepository.registerInitialSuperAdmin(
+              name: 'SuperAdmin',
+              email: cleanEmail,
+              password: '1q2w3e4r',
+            );
+            final credentials = await _authRepository.login(cleanEmail, '1q2w3e4r');
+            final fbUser = credentials.user;
+            if (fbUser != null) {
+              _userModel = await _authRepository.getUserData(fbUser.uid);
+              debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 4 & 5: Seeding & Password verification: SUCCESS');
+              debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 6: Role validation: SUCCESS');
+              debugPrint('====================================================');
+              _setLoading(false);
+              return true;
+            }
+          } catch (regErr) {
+            debugPrint('[SUPERADMIN_AUTH_DEBUG] Seeding attempt exception: $regErr');
+          }
+        }
+      } catch (err) {
+        debugPrint('[SUPERADMIN_AUTH_DEBUG] Unexpected exception in auto-seed block: $err');
+      }
+    }
+
     try {
-      final credentials = await _authRepository.login(email, password);
+      final credentials = await _authRepository.login(cleanEmail, password);
       final fbUser = credentials.user;
 
       if (fbUser == null) {
+        debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 4: User existence check: FAILED (No user returned)');
         _setError("Authentication failed: No user returned.");
         _setLoading(false);
         return false;
       }
 
+      debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 4: User existence check: SUCCESS (UID: ${fbUser.uid})');
+      debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 5: Password validation: SUCCESS');
+
       final UserModel? fetchedUser = await _authRepository.getUserData(fbUser.uid);
       if (fetchedUser == null) {
+        debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 6: Role validation: FAILED (No user document in Firestore)');
         _setError("Super Admin account not found.");
         await _authRepository.logout();
         _setLoading(false);
@@ -124,16 +215,21 @@ class AuthProvider with ChangeNotifier {
       }
 
       if (fetchedUser.role != UserRoles.superAdmin) {
+        debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 6: Role validation: FAILED (Role is ${fetchedUser.role}, expected ${UserRoles.superAdmin})');
         _setError("Access Denied: You do not have super admin privileges.");
         await _authRepository.logout();
         _setLoading(false);
         return false;
       }
 
+      debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 6: Role validation: SUCCESS (Role: ${fetchedUser.role})');
+      debugPrint('[SUPERADMIN_AUTH_DEBUG] AUTHENTICATION COMPLETE -> Redirecting to Dashboard');
+      debugPrint('====================================================');
       _userModel = fetchedUser;
       _setLoading(false);
       return true;
     } on fb_auth.FirebaseAuthException catch (e) {
+      debugPrint('[SUPERADMIN_AUTH_DEBUG] FirebaseAuthException caught: ${e.code} — ${e.message}');
       if (e.code == 'user-not-found') {
         _setError("Super Admin account not found.");
       } else if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
@@ -144,7 +240,31 @@ class AuthProvider with ChangeNotifier {
       _setLoading(false);
       return false;
     } catch (e) {
+      debugPrint('[SUPERADMIN_AUTH_DEBUG] Unexpected Exception caught: $e');
       _setError("An unexpected error occurred: ${e.toString()}");
+      _setLoading(false);
+      return false;
+    }
+  }
+
+  /// Changes the SuperAdmin password after verifying current password
+  Future<bool> changePassword(String currentPassword, String newPassword) async {
+    _setLoading(true);
+    _setError(null);
+    try {
+      await _authRepository.changePassword(currentPassword, newPassword);
+      _setLoading(false);
+      return true;
+    } on fb_auth.FirebaseAuthException catch (e) {
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        _setError("Current password is incorrect.");
+      } else {
+        _setError(e.message ?? "Failed to change password.");
+      }
+      _setLoading(false);
+      return false;
+    } catch (e) {
+      _setError(e.toString().replaceAll("Exception: ", ""));
       _setLoading(false);
       return false;
     }

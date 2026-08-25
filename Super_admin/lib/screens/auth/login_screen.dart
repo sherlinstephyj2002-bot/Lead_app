@@ -13,7 +13,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _emailController = TextEditingController(text: 'superadmin@worktrack.local');
   final _passwordController = TextEditingController();
   
   bool _obscurePassword = true;
@@ -34,24 +34,35 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.error_outline_rounded, color: Colors.white),
+            const Icon(Icons.gpp_bad_rounded, color: Colors.white),
             const SizedBox(width: 12),
-            Expanded(child: Text(message)),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
           ],
         ),
-        backgroundColor: Theme.of(context).colorScheme.error,
+        backgroundColor: const Color(0xFFDC2626),
         duration: const Duration(seconds: 4),
         behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
+
+    debugPrint('====================================================');
+    debugPrint('[SUPERADMIN_AUTH_DEBUG] Step 1: Login button pressed on UI with email: "${_emailController.text}"');
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     
@@ -73,7 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showForgotPasswordDialog() {
-    final resetEmailController = TextEditingController();
+    final resetEmailController = TextEditingController(text: 'superadmin@worktrack.local');
     final dialogFormKey = GlobalKey<FormState>();
 
     showDialog(
@@ -83,11 +94,26 @@ class _LoginScreenState extends State<LoginScreen> {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
+              backgroundColor: const Color(0xFF0F172A),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: const BorderSide(color: Color(0xFF334155)),
+              ),
               title: Row(
                 children: [
-                  Icon(Icons.lock_reset_rounded, color: theme.primaryColor),
-                  const SizedBox(width: 10),
-                  const Text('Super Admin Password Recovery'),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: theme.primaryColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.lock_reset_rounded, color: theme.primaryColor),
+                  ),
+                  const SizedBox(width: 14),
+                  const Text(
+                    'Super Admin Password Recovery',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                 ],
               ),
               content: Form(
@@ -97,23 +123,23 @@ class _LoginScreenState extends State<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Enter your registered Super Admin email address below. A password reset link will be sent to your inbox.',
-                      style: TextStyle(color: Colors.white70),
+                      'Enter your dedicated Super Admin email address below. A password reset link will be dispatched securely.',
+                      style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13, height: 1.5),
                     ),
                     const SizedBox(height: 20),
                     TextFormField(
                       controller: resetEmailController,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                        labelText: 'Registered Email Address',
-                        prefixIcon: Icon(Icons.email_outlined),
-                        hintText: 'admin@platform.com',
+                        labelText: 'Super Admin Email',
+                        prefixIcon: const Icon(Icons.mark_email_read_outlined),
+                        hintText: 'superadmin@worktrack.local',
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return 'Please enter your registered email address';
+                          return 'Please enter your Super Admin email address';
                         }
-                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value.trim())) {
+                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,10}$').hasMatch(value.trim())) {
                           return 'Please enter a valid email address';
                         }
                         return null;
@@ -125,35 +151,35 @@ class _LoginScreenState extends State<LoginScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancel'),
+                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
+                    backgroundColor: theme.primaryColor,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   ),
                   onPressed: () async {
                     if (!dialogFormKey.currentState!.validate()) return;
                     
                     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                    Navigator.of(context).pop();
-                    
                     final success = await authProvider.sendPasswordReset(resetEmailController.text.trim());
                     
                     if (!context.mounted) return;
+                    Navigator.of(context).pop();
                     
                     if (success) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Row(
+                        const SnackBar(
+                          content: Row(
                             children: [
                               Icon(Icons.check_circle_outline_rounded, color: Colors.white),
                               SizedBox(width: 12),
                               Expanded(
-                                child: Text('Password reset email sent! Please check your inbox and follow the instructions.'),
+                                child: Text('Password reset link sent! Check your admin inbox.'),
                               ),
                             ],
                           ),
-                          backgroundColor: Colors.green,
+                          backgroundColor: const Color(0xFF10B981),
                           duration: const Duration(seconds: 5),
                           behavior: SnackBarBehavior.floating,
                         ),
@@ -175,7 +201,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final size = MediaQuery.of(context).size;
     final authProvider = Provider.of<AuthProvider>(context);
     final isLoading = authProvider.isLoading;
@@ -183,58 +208,59 @@ class _LoginScreenState extends State<LoginScreen> {
     final maskedEmail = authProvider.superAdminMaskedEmail;
 
     return Scaffold(
+      backgroundColor: const Color(0xFF070A13),
       body: Stack(
         children: [
-          // Background Gradient Pattern
+          // Background Gradient Grid & Orbs
           Container(
             width: double.infinity,
             height: double.infinity,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+            decoration: const BoxDecoration(
+              gradient: RadialGradient(
+                center: Alignment(-0.6, -0.6),
+                radius: 1.2,
                 colors: [
-                  theme.scaffoldBackgroundColor,
-                  const Color(0xFF131130),
-                  theme.colorScheme.surface,
+                  Color(0xFF1E1B4B),
+                  Color(0xFF0F172A),
+                  Color(0xFF070A13),
                 ],
               ),
             ),
           ),
           
-          // Glowing Ambient Orbs
+          // Glowing Ambient Gradient Orbs
           Positioned(
-            top: size.height * 0.15,
-            left: size.width * 0.2,
+            top: size.height * 0.1,
+            left: size.width * 0.15,
             child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 70.0, sigmaY: 70.0),
+              imageFilter: ImageFilter.blur(sigmaX: 90.0, sigmaY: 90.0),
               child: Container(
-                width: 250,
-                height: 250,
+                width: 320,
+                height: 320,
                 decoration: BoxDecoration(
-                  color: theme.primaryColor.withValues(alpha: 0.12),
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.18),
                   shape: BoxShape.circle,
                 ),
               ),
             ),
           ),
           Positioned(
-            bottom: size.height * 0.15,
-            right: size.width * 0.2,
+            bottom: size.height * 0.1,
+            right: size.width * 0.15,
             child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 80.0, sigmaY: 80.0),
+              imageFilter: ImageFilter.blur(sigmaX: 100.0, sigmaY: 100.0),
               child: Container(
-                width: 300,
-                height: 300,
+                width: 350,
+                height: 350,
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.secondary.withValues(alpha: 0.12),
+                  color: const Color(0xFF06B6D4).withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
               ),
             ),
           ),
-          
-          // Form Container
+
+          // Central Form Container
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
@@ -243,38 +269,95 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Branding Logo Header
-                    Icon(
-                      Icons.admin_panel_settings_rounded,
-                      size: 64,
-                      color: theme.primaryColor,
+                    // SignaPix Branding & Super Admin Header
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFF6366F1).withValues(alpha: 0.3),
+                          width: 2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF6366F1).withValues(alpha: 0.25),
+                            blurRadius: 30,
+                            spreadRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.shield_outlined,
+                        size: 48,
+                        color: Color(0xFF818CF8),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    // Main Title
+                    const Text(
+                      'SuperAdmin',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    
+                    // Subtitle
+                    const Text(
+                      'Administration Portal',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF94A3B8),
+                        letterSpacing: 0.5,
+                      ),
                     ),
                     const SizedBox(height: 16),
-                    Text(
-                      'Super Admin Portal',
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Access the platform management system',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.textTheme.bodySmall?.color,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
 
-                    // Initial Setup Action Banner (Only visible if SUPER_ADMIN_COUNT == 0)
+                    // Secure Restricted Access Indicator
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFF334155)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.lock_outline_rounded,
+                            size: 14,
+                            color: Color(0xFF10B981),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Restricted Access · Authorized Personnel Only',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFCBD5E1),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+
+                    // Initial Setup Banner if no Super Admin exists
                     if (!hasSuperAdmin)
                       Container(
                         margin: const EdgeInsets.only(bottom: 24),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.amber.withValues(alpha: 0.15),
+                          color: Colors.amber.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                          border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
                         ),
                         child: Column(
                           children: [
@@ -284,7 +367,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    'No Super Admin account found on this platform.',
+                                    'No Super Admin account found on this system.',
                                     style: TextStyle(
                                       color: Colors.amberAccent,
                                       fontWeight: FontWeight.bold,
@@ -311,61 +394,91 @@ class _LoginScreenState extends State<LoginScreen> {
                           ],
                         ),
                       ),
-                    
-                    // Glassmorphism Card
+
+                    // Glassmorphism Card Form
                     ClipRRect(
                       borderRadius: BorderRadius.circular(24),
                       child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 16.0, sigmaY: 16.0),
+                        filter: ImageFilter.blur(sigmaX: 20.0, sigmaY: 20.0),
                         child: Container(
-                          padding: const EdgeInsets.all(40),
+                          padding: const EdgeInsets.all(36),
                           decoration: BoxDecoration(
-                            color: theme.cardColor.withValues(alpha: 0.4),
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.7),
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.08),
+                              color: Colors.white.withValues(alpha: 0.1),
                               width: 1.5,
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.4),
+                                blurRadius: 30,
+                                spreadRadius: 5,
+                              )
+                            ],
                           ),
                           child: Form(
                             key: _formKey,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
+                                const Text(
+                                  'Sign In',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'Enter your credentials to access the admin panel',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+
+                                // Email Input
                                 TextFormField(
                                   controller: _emailController,
                                   keyboardType: TextInputType.emailAddress,
                                   textInputAction: TextInputAction.next,
+                                  style: const TextStyle(color: Colors.white),
                                   decoration: const InputDecoration(
                                     labelText: 'Email Address',
-                                    prefixIcon: Icon(Icons.email_outlined),
-                                    hintText: 'name@example.com',
+                                    prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF818CF8)),
+                                    hintText: 'superadmin@worktrack.local',
                                   ),
                                   validator: (value) {
                                     if (value == null || value.trim().isEmpty) {
-                                      return 'Please enter your email address';
+                                      return 'Please enter your Super Admin email';
                                     }
-                                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value.trim())) {
+                                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,10}$').hasMatch(value.trim())) {
                                       return 'Please enter a valid email address';
                                     }
                                     return null;
                                   },
                                 ),
-                                const SizedBox(height: 24),
+                                const SizedBox(height: 20),
+
+                                // Password Input
                                 TextFormField(
                                   controller: _passwordController,
                                   obscureText: _obscurePassword,
                                   textInputAction: TextInputAction.done,
                                   onFieldSubmitted: (_) => _handleLogin(),
+                                  style: const TextStyle(color: Colors.white),
                                   decoration: InputDecoration(
                                     labelText: 'Password',
-                                    prefixIcon: const Icon(Icons.lock_outlined),
+                                    prefixIcon: const Icon(Icons.lock_outlined, color: Color(0xFF818CF8)),
                                     suffixIcon: IconButton(
                                       icon: Icon(
                                         _obscurePassword
                                             ? Icons.visibility_off_outlined
                                             : Icons.visibility_outlined,
-                                        color: theme.textTheme.bodyMedium?.color,
+                                        color: const Color(0xFF94A3B8),
                                       ),
                                       onPressed: () {
                                         setState(() {
@@ -384,18 +497,37 @@ class _LoginScreenState extends State<LoginScreen> {
                                     return null;
                                   },
                                 ),
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 12),
+
+                                // Forgot password
                                 Align(
                                   alignment: Alignment.centerRight,
                                   child: TextButton(
                                     onPressed: _showForgotPasswordDialog,
-                                    child: const Text('Forgot Password?'),
+                                    child: const Text(
+                                      'Forgot Password?',
+                                      style: TextStyle(
+                                        color: Color(0xFF818CF8),
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 32),
+                                const SizedBox(height: 24),
+
+                                // Sign In to Admin Panel Button
                                 SizedBox(
-                                  height: 56,
+                                  height: 52,
                                   child: ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF6366F1),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      elevation: 4,
+                                    ),
                                     onPressed: isLoading ? null : _handleLogin,
                                     child: isLoading
                                         ? const SizedBox(
@@ -406,7 +538,20 @@ class _LoginScreenState extends State<LoginScreen> {
                                               valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                             ),
                                           )
-                                        : const Text('Sign In'),
+                                        : const Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.login_rounded, size: 20),
+                                              SizedBox(width: 10),
+                                              Text(
+                                                'Sign In to Admin Panel',
+                                                style: TextStyle(
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                   ),
                                 ),
                               ],
@@ -417,28 +562,28 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Safe Account Existence Status Indicator (No password exposure)
+                    // Status Pill
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.black26,
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white10),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            hasSuperAdmin ? Icons.verified_user_rounded : Icons.warning_amber_rounded,
+                            hasSuperAdmin ? Icons.check_circle_outline_rounded : Icons.warning_amber_rounded,
                             size: 14,
-                            color: hasSuperAdmin ? Colors.greenAccent : Colors.amberAccent,
+                            color: hasSuperAdmin ? const Color(0xFF10B981) : Colors.amberAccent,
                           ),
                           const SizedBox(width: 8),
                           Text(
                             hasSuperAdmin
-                                ? 'Platform Account Status: Registered${maskedEmail != null ? " ($maskedEmail)" : ""}'
-                                : 'Platform Account Status: Setup Required',
-                            style: const TextStyle(fontSize: 12, color: Colors.white70),
+                                ? 'System Status: Active'
+                                : 'System Status: Initial Setup Required',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                           ),
                         ],
                       ),
@@ -453,4 +598,5 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
+
 

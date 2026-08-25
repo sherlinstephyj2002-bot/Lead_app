@@ -73,7 +73,7 @@ class UserModel {
   static String denormalizeRole(String normalizedRole) {
     switch (normalizedRole) {
       case UserRoles.superAdmin:
-        return 'Super Admin';
+        return 'SuperAdmin';
       case UserRoles.companyAdmin:
         return 'Company Admin';
       case UserRoles.employee:

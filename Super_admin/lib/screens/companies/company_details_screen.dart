@@ -272,7 +272,7 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> with Single
       orElse: () => widget.company,
     );
 
-    final adminEmail = authProvider.userModel?.email ?? 'super_admin@platform.com';
+    final adminEmail = authProvider.userModel?.email ?? 'superadmin@worktrack.local';
 
     return Scaffold(
       appBar: AppBar(
