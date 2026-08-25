@@ -411,6 +411,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final userData = userDoc.data() ?? {};
       debugPrint('[AUTH_DEBUG] User Document Found: TRUE (Doc ID: ${userDoc.id}, employeeId: "${userData['employeeId']}", companyEmail: "${userData['companyEmail']}")');
 
+      // Block SuperAdmin account from logging into Lead App
+      final rawRole = (userData['role'] ?? '').toString().trim().toLowerCase();
+      final docEmail = (userData['email'] ?? userData['companyEmail'] ?? '').toString().trim().toLowerCase();
+      if (rawRole == 'superadmin' || rawRole == 'super_admin' || rawRole == 'super admin' || docEmail.contains('superadmin') || docEmail == 'superadmin.worktrack@example.com' || rawInput.toLowerCase() == 'superadmin.worktrack@example.com') {
+        state = AuthState(
+          user: null,
+          isLoading: false,
+          errorMessage: 'Access Denied: SuperAdmin accounts are restricted to the SuperAdmin portal.',
+        );
+        debugPrint('[AUTH_DEBUG] SuperAdmin access blocked on Lead App login');
+        debugPrint('====================================================');
+        return false;
+      }
+
       // 2. Extract the actual Firebase Auth registered email associated with that account
       final firebaseAuthEmail = (userData['email'] ??
               userData['companyEmail'] ??
