@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../shared/models/expense_model.dart';
 import '../../../shared/providers/providers.dart';
+import '../../../shared/utils/app_notification.dart';
 
 class ExpenseFormScreen extends ConsumerStatefulWidget {
   final ExpenseModel? expenseToEdit;
@@ -229,14 +230,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                             );
 
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Expense claim updated successfully!',
-                                  ),
-                                ),
-                              );
                               Navigator.pop(context);
+                              AppNotification.showSuccess(
+                                context,
+                                'Expense claim updated successfully!',
+                              );
                             }
                           } else {
                             await ref.read(expensesProvider.notifier).addExpense(
@@ -247,14 +245,11 @@ class _ExpenseFormScreenState extends ConsumerState<ExpenseFormScreen> {
                             );
 
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'Expense claim submitted for approval!',
-                                  ),
-                                ),
-                              );
                               Navigator.pop(context);
+                              AppNotification.showSuccess(
+                                context,
+                                'Expense claim submitted successfully!',
+                              );
                             }
                           }
                         } catch (e) {

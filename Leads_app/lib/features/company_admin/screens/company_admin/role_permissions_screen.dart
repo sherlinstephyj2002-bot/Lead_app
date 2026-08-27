@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:worktrack/shared/providers/providers.dart';
 import 'package:worktrack/shared/providers/permissions_provider.dart';
 import 'package:worktrack/features/company_admin/providers/company_admin_providers.dart';
 import 'package:worktrack/shared/models/user_model.dart';
 import 'package:worktrack/constants/firestore_collections.dart';
+import 'package:worktrack/shared/utils/app_notification.dart';
 
 class RolePermissionsScreen extends ConsumerStatefulWidget {
   const RolePermissionsScreen({super.key});
@@ -20,57 +22,30 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
   String? _selectedRoleId;
   String _selectedRoleName = '';
   String _selectedRoleDescription = '';
-  bool _selectedIsSystem = true;
+  DateTime? _selectedRoleCreatedAt;
   String _roleSearchQuery = '';
   final TextEditingController _searchCtrl = TextEditingController();
 
   List<Map<String, dynamic>> _roles = [];
   List<String> _selectedPermissions = [];
+  Map<String, List<UserModel>> _assignedUsersByRole = {};
 
-  // Static list of all available permissions grouped by module
+  // All permissions catalog grouped by module
   final Map<String, List<Map<String, String>>> _permissionModules = {
-    'Employee': [
-      {'id': 'employee_view', 'name': 'View Employees', 'desc': 'Access the directory and basic details of employees.'},
-      {'id': 'employee_create', 'name': 'Create Employees', 'desc': 'Create credentials and onboard new employee logins.'},
+    'EMPLOYEES': [
+      {'id': 'employee_view', 'name': 'View Employees', 'desc': 'Access employee directory and basic profile details.'},
+      {'id': 'employee_create', 'name': 'Create Employees', 'desc': 'Onboard new employees and generate login credentials.'},
       {'id': 'employee_edit', 'name': 'Edit Employees', 'desc': 'Modify employee profiles, departments, and designations.'},
-      {'id': 'employee_delete', 'name': 'Delete Employees', 'desc': 'Soft-delete or disable employee accounts.'},
+      {'id': 'employee_delete', 'name': 'Delete Employees', 'desc': 'Soft-delete or suspend employee accounts.'},
     ],
-    'Department': [
-      {'id': 'department_create', 'name': 'Create Departments', 'desc': 'Create new departments.'},
-      {'id': 'department_edit', 'name': 'Edit Departments', 'desc': 'Update managers and department settings.'},
-      {'id': 'department_delete', 'name': 'Delete Departments', 'desc': 'Remove business departments.'},
-    ],
-    'Attendance': [
-      {'id': 'attendance_view', 'name': 'View Attendance', 'desc': 'View daily attendance check-ins and hours logs.'},
-      {'id': 'attendance_approve', 'name': 'Approve Attendance', 'desc': 'Approve regularizations or manager overrides.'},
-      {'id': 'attendance_correct', 'name': 'Correct Logs', 'desc': 'Manually alter work shifts or check-in logs.'},
-    ],
-    'Leave': [
-      {'id': 'leave_apply', 'name': 'Apply Leaves', 'desc': 'Submit personal leave requests.'},
-      {'id': 'leave_approve', 'name': 'Approve Leaves', 'desc': 'Approve team leave requests.'},
-      {'id': 'leave_reject', 'name': 'Reject Leaves', 'desc': 'Reject team leave requests.'},
-    ],
-    'Payroll': [
-      {'id': 'payroll_view', 'name': 'View Payroll', 'desc': 'Access payroll details and payslips.'},
-      {'id': 'payroll_generate', 'name': 'Generate Payroll', 'desc': 'Configure and process payroll cycles.'},
-      {'id': 'payroll_approve', 'name': 'Approve Payroll', 'desc': 'Authorize payroll releases.'},
-      {'id': 'payroll_manage', 'name': 'Manage Payroll', 'desc': 'Configure salary components, structures, cycles, statutory rates, and process payroll.'},
-    ],
-    'Lead': [
-      {'id': 'lead_view', 'name': 'View Leads', 'desc': 'Access lead lists, pipeline views, and lead details.'},
+    'LEADS': [
+      {'id': 'lead_view', 'name': 'View Leads', 'desc': 'Access lead lists, pipeline stages, and lead details.'},
       {'id': 'lead_create', 'name': 'Create Leads', 'desc': 'Add new sales leads into the system.'},
-      {'id': 'lead_edit', 'name': 'Edit Leads', 'desc': 'Update lead info, status, values, and assignees.'},
-      {'id': 'lead_delete', 'name': 'Delete Leads', 'desc': 'Remove or archive lead records.'},
+      {'id': 'lead_edit', 'name': 'Edit Leads', 'desc': 'Update lead info, status, estimated values, and assignees.'},
+      {'id': 'lead_delete', 'name': 'Delete Leads', 'desc': 'Archive or remove lead records.'},
       {'id': 'lead_convert_order', 'name': 'Convert to Order', 'desc': 'Convert won sales leads into trackable client orders.'},
     ],
-    'Follow-up': [
-      {'id': 'followup_view', 'name': 'View Follow-ups', 'desc': 'View scheduled client call and meeting follow-ups.'},
-      {'id': 'followup_create', 'name': 'Create Follow-ups', 'desc': 'Schedule new follow-ups for leads and clients.'},
-      {'id': 'followup_edit', 'name': 'Edit Follow-ups', 'desc': 'Modify follow-up schedules, dates, and notes.'},
-      {'id': 'followup_complete', 'name': 'Complete Follow-ups', 'desc': 'Mark follow-up activities as completed.'},
-      {'id': 'followup_delete', 'name': 'Delete Follow-ups', 'desc': 'Cancel or delete follow-up reminders.'},
-    ],
-    'Orders': [
+    'ORDERS': [
       {'id': 'order_view', 'name': 'View Orders', 'desc': 'Access orders dashboard, order lists, and project details.'},
       {'id': 'order_create', 'name': 'Create Orders', 'desc': 'Create new client orders into the system.'},
       {'id': 'order_edit', 'name': 'Edit Orders', 'desc': 'Modify order details, item entries, and assignees.'},
@@ -78,40 +53,59 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
       {'id': 'order_close', 'name': 'Close Orders', 'desc': 'Mark active orders as completed/closed.'},
       {'id': 'order_cancel', 'name': 'Cancel Orders', 'desc': 'Cancel active or pending client orders.'},
     ],
-    'Tasks': [
+    'ATTENDANCE': [
+      {'id': 'attendance_view', 'name': 'View Attendance', 'desc': 'View daily attendance check-ins and hours logs.'},
+      {'id': 'attendance_approve', 'name': 'Approve Attendance', 'desc': 'Approve regularizations or manager overrides.'},
+      {'id': 'attendance_correct', 'name': 'Correct Logs', 'desc': 'Manually alter work shifts or check-in logs.'},
+    ],
+    'LEAVE': [
+      {'id': 'leave_apply', 'name': 'Apply Leaves', 'desc': 'Submit personal leave requests.'},
+      {'id': 'leave_approve', 'name': 'Approve Leaves', 'desc': 'Approve team leave requests.'},
+      {'id': 'leave_reject', 'name': 'Reject Leaves', 'desc': 'Reject team leave requests.'},
+    ],
+    'PAYROLL': [
+      {'id': 'payroll_view', 'name': 'View Payroll', 'desc': 'Access payroll details and payslips.'},
+      {'id': 'payroll_generate', 'name': 'Generate Payroll', 'desc': 'Configure and process monthly payroll cycles.'},
+      {'id': 'payroll_approve', 'name': 'Approve Payroll', 'desc': 'Authorize monthly payroll releases.'},
+      {'id': 'payroll_manage', 'name': 'Manage Payroll', 'desc': 'Configure statutory rates, salary structures, and process payroll.'},
+    ],
+    'REPORTS': [
+      {'id': 'reports_view', 'name': 'View Reports', 'desc': 'Access high-level dashboards and analytics.'},
+      {'id': 'reports_export', 'name': 'Export Data', 'desc': 'Download and export spreadsheets or PDFs.'},
+    ],
+    'COMPANY ADMINISTRATION': [
+      {'id': 'department_create', 'name': 'Manage Departments', 'desc': 'Create, edit, and manage departments.'},
+      {'id': 'designation_create', 'name': 'Manage Designations', 'desc': 'Create, edit, and manage designations.'},
+      {'id': 'settings_manage', 'name': 'Settings Administration', 'desc': 'Alter geo-fencing borders, late grace times, office shifts, and feature modules.'},
+    ],
+    'TASKS': [
       {'id': 'task_view', 'name': 'View Tasks', 'desc': 'Access task dashboard and personal/team task lists.'},
       {'id': 'task_create', 'name': 'Create Tasks', 'desc': 'Create new tasks for self or team members.'},
       {'id': 'task_edit', 'name': 'Edit Tasks', 'desc': 'Modify task details, priority, and due dates.'},
       {'id': 'task_delete', 'name': 'Delete Tasks', 'desc': 'Delete task entries.'},
       {'id': 'task_assign', 'name': 'Assign Tasks', 'desc': 'Assign tasks to other team members.'},
-      {'id': 'task_complete', 'name': 'Complete Tasks', 'desc': 'Mark assigned tasks as done/completed.'},
-      {'id': 'task_reassign', 'name': 'Reassign Tasks', 'desc': 'Transfer task ownership to another employee.'},
     ],
-    'Reports': [
-      {'id': 'reports_view', 'name': 'View Reports', 'desc': 'Access high-level dashboards and charts.'},
-      {'id': 'reports_export', 'name': 'Export Data', 'desc': 'Download and export spreadsheets or PDFs.'},
-    ],
-    'Settings': [
-      {'id': 'settings_manage', 'name': 'Settings Administration', 'desc': 'Alter geo-fencing borders, late grace times, office shifts, and feature modules.'},
+    'FOLLOW-UPS': [
+      {'id': 'followup_view', 'name': 'View Follow-ups', 'desc': 'View scheduled client call and meeting follow-ups.'},
+      {'id': 'followup_create', 'name': 'Create Follow-ups', 'desc': 'Schedule new follow-ups for leads and clients.'},
+      {'id': 'followup_edit', 'name': 'Edit Follow-ups', 'desc': 'Modify follow-up schedules, dates, and notes.'},
+      {'id': 'followup_complete', 'name': 'Complete Follow-ups', 'desc': 'Mark follow-up activities as completed.'},
     ],
   };
 
   @override
   void initState() {
     super.initState();
-    _loadRoles();
+    _loadRolesAndEmployees();
   }
 
-  Future<void> _loadRoles() async {
+  Future<void> _loadRolesAndEmployees() async {
     setState(() => _isLoading = true);
     final user = ref.read(authProvider).user;
     if (user == null) return;
 
     try {
-      // 1. Ensure defaults are seeded
-      await seedDefaultRolesAndPermissions(user.companyId);
-
-      // 2. Fetch all roles for this company
+      // 1. Fetch custom roles created specifically for this company
       final snapshot = await FirebaseFirestore.instance
           .collection('roles')
           .where('companyId', isEqualTo: user.companyId)
@@ -119,43 +113,57 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
 
       final rolesList = snapshot.docs.map((doc) {
         final data = doc.data();
+        DateTime? createdAt;
+        if (data['createdAt'] is Timestamp) {
+          createdAt = (data['createdAt'] as Timestamp).toDate();
+        }
         return {
           'roleId': doc.id,
           'roleName': data['roleName'] ?? '',
           'description': data['description'] ?? '',
           'isSystemRole': data['isSystemRole'] ?? false,
+          'createdAt': createdAt ?? DateTime.now(),
         };
       }).toList();
 
-      // Sort system roles first, then alphabetically
-      rolesList.sort((a, b) {
-        final aSys = a['isSystemRole'] as bool;
-        final bSys = b['isSystemRole'] as bool;
-        if (aSys != bSys) {
-          return aSys ? -1 : 1;
-        }
-        return (a['roleName'] as String).compareTo(b['roleName'] as String);
-      });
+      rolesList.sort((a, b) => (a['roleName'] as String).compareTo(b['roleName'] as String));
+
+      // 2. Fetch company employees to calculate assigned users count & names
+      final employeesAsync = ref.read(adminEmployeesProvider);
+      final employees = employeesAsync.value ?? [];
+
+      final Map<String, List<UserModel>> userMapping = {};
+      for (final r in rolesList) {
+        final rName = (r['roleName'] as String).toLowerCase();
+        final rId = r['roleId'] as String;
+
+        final assigned = employees.where((emp) {
+          final empRole = emp.role.toLowerCase();
+          return empRole == rName || empRole == rId;
+        }).toList();
+
+        userMapping[rId] = assigned;
+      }
 
       setState(() {
         _roles = rolesList;
+        _assignedUsersByRole = userMapping;
         _isLoading = false;
-        // Default select first role if none selected
+
         if (_selectedRoleId == null && rolesList.isNotEmpty) {
           _selectRole(rolesList.first);
         } else if (_selectedRoleId != null) {
-          // Keep selection if it still exists
           final current = rolesList.where((r) => r['roleId'] == _selectedRoleId);
           if (current.isNotEmpty) {
             _selectRole(current.first);
-          } else {
+          } else if (rolesList.isNotEmpty) {
             _selectRole(rolesList.first);
           }
         }
       });
     } catch (e) {
       setState(() => _isLoading = false);
-      _showSnackBar('Failed to load roles: $e', Colors.red);
+      _showSnackBar('Failed to load roles: $e', isError: true);
     }
   }
 
@@ -164,12 +172,11 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
       _selectedRoleId = role['roleId'];
       _selectedRoleName = role['roleName'];
       _selectedRoleDescription = role['description'];
-      _selectedIsSystem = role['isSystemRole'] ?? false;
+      _selectedRoleCreatedAt = role['createdAt'] as DateTime?;
       _isLoading = true;
     });
 
     try {
-      // Fetch permissions for the selected role
       final query = await FirebaseFirestore.instance
           .collection('role_permissions')
           .where('roleId', isEqualTo: _selectedRoleId)
@@ -184,7 +191,7 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
-      _showSnackBar('Failed to load role permissions: $e', Colors.red);
+      _showSnackBar('Failed to load role permissions: $e', isError: true);
     }
   }
 
@@ -196,7 +203,6 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
       final db = FirebaseFirestore.instance;
       final batch = db.batch();
 
-      // 1. Delete all current role_permissions mappings for this roleId
       final existing = await db
           .collection('role_permissions')
           .where('roleId', isEqualTo: _selectedRoleId)
@@ -206,7 +212,6 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
         batch.delete(doc.reference);
       }
 
-      // 2. Insert new mappings
       for (final permId in _selectedPermissions) {
         final docId = '${_selectedRoleId}_$permId';
         batch.set(db.collection('role_permissions').doc(docId), {
@@ -215,20 +220,18 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
         });
       }
 
-      // 3. Update roles timestamp
       batch.update(db.collection('roles').doc(_selectedRoleId), {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       await batch.commit();
       setState(() => _isLoading = false);
-      _showSnackBar('Permissions updated successfully.', Colors.green);
-      
-      // Reload current permissions
+      AppNotification.showSuccess(context, 'Permissions for "$_selectedRoleName" updated successfully.');
+
       ref.invalidate(userPermissionsProvider);
     } catch (e) {
       setState(() => _isLoading = false);
-      _showSnackBar('Failed to save permissions: $e', Colors.red);
+      _showSnackBar('Failed to save permissions: $e', isError: true);
     }
   }
 
@@ -236,83 +239,57 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController();
     final descCtrl = TextEditingController();
-    String? cloneFromRoleId;
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (dialogCtx, setDialogState) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Create Custom Role', style: TextStyle(fontWeight: FontWeight.bold)),
-            content: SizedBox(
-              width: 400,
-              child: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        controller: nameCtrl,
-                        decoration: const InputDecoration(labelText: 'Role Name *', hintText: 'e.g. Leave Manager'),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Required';
-                          // Prevent system names or duplicate local names
-                          final exists = _roles.any((r) => r['roleName'].toString().toLowerCase() == v.trim().toLowerCase());
-                          if (exists) return 'Role already exists';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: descCtrl,
-                        decoration: const InputDecoration(labelText: 'Description', hintText: 'Describe role duties'),
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        initialValue: cloneFromRoleId,
-                        decoration: const InputDecoration(
-                          labelText: 'Inherit Permissions From (Optional)',
-                          prefixIcon: Icon(Icons.copy_rounded, size: 20),
-                        ),
-                        items: _roles.map((r) {
-                          return DropdownMenuItem(
-                            value: r['roleId'] as String,
-                            child: Text(r['roleName'] as String),
-                          );
-                        }).toList(),
-                        onChanged: (val) {
-                          setDialogState(() {
-                            cloneFromRoleId = val;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Create Custom Role', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+        content: SizedBox(
+          width: 420,
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Role Name *', hintText: 'e.g. Tech Lead, Senior Analyst, Team Lead'),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Required';
+                    final exists = _roles.any((r) => r['roleName'].toString().toLowerCase() == v.trim().toLowerCase());
+                    if (exists) return 'Role name already exists';
+                    return null;
+                  },
                 ),
-              ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: descCtrl,
+                  decoration: const InputDecoration(labelText: 'Description', hintText: 'Describe role duties'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-              ElevatedButton(
-                onPressed: () async {
-                  if (formKey.currentState!.validate()) {
-                    Navigator.pop(ctx);
-                    await _createRole(nameCtrl.text.trim(), descCtrl.text.trim(), cloneFromRoleId);
-                  }
-                },
-                child: const Text('Create'),
-              ),
-            ],
-          );
-        },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(fontFamily: 'Outfit'))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () async {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx);
+                await _createRole(nameCtrl.text.trim(), descCtrl.text.trim());
+              }
+            },
+            child: const Text('Create Role', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }
 
-  Future<void> _createRole(String name, String description, String? cloneFromRoleId) async {
+  Future<void> _createRole(String name, String description) async {
     setState(() => _isLoading = true);
     final user = ref.read(authProvider).user;
     if (user == null) return;
@@ -322,7 +299,6 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
       final db = FirebaseFirestore.instance;
       final batch = db.batch();
 
-      // 1. Create role document
       batch.set(db.collection('roles').doc(roleId), {
         'roleId': roleId,
         'companyId': user.companyId,
@@ -333,30 +309,23 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // 2. Clone permissions if chosen
-      if (cloneFromRoleId != null) {
-        final query = await db
-            .collection('role_permissions')
-            .where('roleId', isEqualTo: cloneFromRoleId)
-            .get();
-
-        for (final doc in query.docs) {
-          final permId = doc.data()['permissionId'] as String;
-          final mappingId = '${roleId}_$permId';
-          batch.set(db.collection('role_permissions').doc(mappingId), {
-            'roleId': roleId,
-            'permissionId': permId,
-          });
-        }
+      // Default basic permissions
+      final defaultPerms = ['employee_view', 'attendance_view', 'leave_apply'];
+      for (final permId in defaultPerms) {
+        final docId = '${roleId}_$permId';
+        batch.set(db.collection('role_permissions').doc(docId), {
+          'roleId': roleId,
+          'permissionId': permId,
+        });
       }
 
       await batch.commit();
       _selectedRoleId = roleId;
-      await _loadRoles();
-      _showSnackBar('Custom role created successfully.', Colors.green);
+      await _loadRolesAndEmployees();
+      AppNotification.showSuccess(context, 'Custom role "$name" created successfully.');
     } catch (e) {
       setState(() => _isLoading = false);
-      _showSnackBar('Failed to create role: $e', Colors.red);
+      _showSnackBar('Failed to create role: $e', isError: true);
     }
   }
 
@@ -369,7 +338,7 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Edit Role Details', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Edit Role Details', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
         content: Form(
           key: formKey,
           child: Column(
@@ -394,15 +363,16 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(fontFamily: 'Outfit'))),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
             onPressed: () async {
               if (formKey.currentState!.validate()) {
                 Navigator.pop(ctx);
                 await _updateRole(role['roleId'], nameCtrl.text.trim(), descCtrl.text.trim());
               }
             },
-            child: const Text('Save'),
+            child: const Text('Save Changes', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -417,11 +387,11 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
         'description': desc,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      await _loadRoles();
-      _showSnackBar('Role details updated successfully.', Colors.green);
+      await _loadRolesAndEmployees();
+      AppNotification.showSuccess(context, 'Role details updated successfully.');
     } catch (e) {
       setState(() => _isLoading = false);
-      _showSnackBar('Failed to update role: $e', Colors.red);
+      _showSnackBar('Failed to update role: $e', isError: true);
     }
   }
 
@@ -429,17 +399,18 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Custom Role'),
-        content: Text('Are you sure you want to delete "${role['roleName']}"? This will clean up its custom access permissions.'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Custom Role', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to delete "${role['roleName']}"?', style: const TextStyle(fontFamily: 'Outfit')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(fontFamily: 'Outfit'))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
             onPressed: () async {
               Navigator.pop(ctx);
               await _deleteRole(role['roleId'], role['roleName']);
             },
-            child: const Text('Delete'),
+            child: const Text('Delete Role', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -453,15 +424,9 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
 
     try {
       final db = FirebaseFirestore.instance;
+      final assignedUsers = _assignedUsersByRole[roleId] ?? [];
 
-      // Check if employees are assigned to this role
-      final assignedUsersSnap = await db
-          .collection(FirestoreCollections.users)
-          .where('companyId', isEqualTo: user.companyId)
-          .where('role', isEqualTo: roleName)
-          .get();
-
-      if (assignedUsersSnap.docs.isNotEmpty) {
+      if (assignedUsers.isNotEmpty) {
         setState(() => _isLoading = false);
         if (mounted) {
           showDialog(
@@ -476,7 +441,7 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
                 ],
               ),
               content: Text(
-                'This role cannot be deleted because ${assignedUsersSnap.docs.length} employee(s) are currently assigned to it. Please reassign the employees to another role first.',
+                'This role cannot be deleted because ${assignedUsers.length} employee(s) (${assignedUsers.map((u) => u.name).take(3).join(', ')}) are currently assigned to it.',
                 style: const TextStyle(fontFamily: 'Outfit', fontSize: 13),
               ),
               actions: [
@@ -489,11 +454,8 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
       }
 
       final batch = db.batch();
-
-      // 1. Delete role doc
       batch.delete(db.collection('roles').doc(roleId));
 
-      // 2. Delete mappings
       final mappings = await db
           .collection('role_permissions')
           .where('roleId', isEqualTo: roleId)
@@ -505,11 +467,11 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
 
       await batch.commit();
       _selectedRoleId = null;
-      await _loadRoles();
-      _showSnackBar('Role deleted successfully.', Colors.green);
+      await _loadRolesAndEmployees();
+      AppNotification.showSuccess(context, 'Role "$roleName" deleted successfully.');
     } catch (e) {
       setState(() => _isLoading = false);
-      _showSnackBar('Failed to delete role: $e', Colors.red);
+      _showSnackBar('Failed to delete role: $e', isError: true);
     }
   }
 
@@ -521,7 +483,7 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
     final employees = employeesAsync.value ?? [];
 
     if (employees.isEmpty) {
-      _showSnackBar('No employees available in your company.', Colors.orange);
+      _showSnackBar('No employees available in your company.', isError: true);
       return;
     }
 
@@ -574,25 +536,25 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Department: ${selectedEmployee!.department ?? "Unassigned"}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          Text('Department: ${selectedEmployee!.department ?? "Unassigned"}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Outfit')),
                           const SizedBox(height: 2),
-                          Text('Designation: ${selectedEmployee!.designation ?? "Unassigned"}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          Text('Designation: ${selectedEmployee!.designation ?? "Unassigned"}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Outfit')),
                           const SizedBox(height: 2),
-                          Text('Current System Role: ${UserModel.denormalizeRole(selectedEmployee!.role)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF5B4CF0))),
+                          Text('Current Role: ${selectedEmployee!.role}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF5B4CF0), fontFamily: 'Outfit')),
                         ],
                       ),
                     ),
                     const SizedBox(height: 14),
                   ],
-                  const Text('Select System / Custom Role *', style: TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.bold)),
+                  const Text('Select Custom Role *', style: TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
-                    value: selectedRoleName,
+                    value: _roles.any((r) => r['roleName'] == selectedRoleName) ? selectedRoleName : (_roles.isNotEmpty ? _roles.first['roleName'] : ''),
                     decoration: const InputDecoration(border: OutlineInputBorder(), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
                     items: _roles.map((r) {
                       return DropdownMenuItem<String>(
                         value: r['roleName'] as String,
-                        child: Text('${r['roleName']} ${r['isSystemRole'] ? "(System)" : "(Custom)"}', style: const TextStyle(fontFamily: 'Outfit', fontSize: 13)),
+                        child: Text('${r['roleName']}', style: const TextStyle(fontFamily: 'Outfit', fontSize: 13)),
                       );
                     }).toList(),
                     onChanged: (val) {
@@ -605,40 +567,30 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
             actions: [
               TextButton(onPressed: isSaving ? null : () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(fontFamily: 'Outfit'))),
               ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                 onPressed: isSaving || selectedEmployee == null
                     ? null
                     : () async {
                         setModalState(() => isSaving = true);
                         try {
-                          final targetRoleObj = _roles.firstWhere((r) => r['roleName'] == selectedRoleName, orElse: () => {'roleId': '', 'roleName': selectedRoleName});
-                          final customRoleId = targetRoleObj['roleId'] as String;
-
                           await FirebaseFirestore.instance
                               .collection(FirestoreCollections.users)
                               .doc(selectedEmployee!.uid)
                               .update({
                             'role': selectedRoleName,
-                            if (customRoleId.isNotEmpty) 'customRoleId': customRoleId,
                             'updatedAt': FieldValue.serverTimestamp(),
                           });
 
-                          await ref.read(companyAdminRepositoryProvider).logEmployeeActivity(
-                            companyId: user.companyId,
-                            employeeId: selectedEmployee!.uid,
-                            action: 'Role updated to $selectedRoleName',
-                            performedBy: user.name,
-                          );
-
                           await ref.read(adminEmployeesProvider.notifier).loadEmployees();
+                          await _loadRolesAndEmployees();
 
                           if (context.mounted) {
                             Navigator.pop(ctx);
-                            _showSnackBar('Role assigned to ${selectedEmployee!.name} successfully!', Colors.green);
+                            AppNotification.showSuccess(context, 'Role "$selectedRoleName" assigned to ${selectedEmployee!.name} successfully!');
                           }
                         } catch (e) {
                           setModalState(() => isSaving = false);
-                          _showSnackBar('Failed to assign role: $e', Colors.red);
+                          _showSnackBar('Failed to assign role: $e', isError: true);
                         }
                       },
                 child: isSaving
@@ -652,17 +604,16 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
     );
   }
 
-  void _showSnackBar(String msg, Color color) {
+  void _showSnackBar(String msg, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: color),
+      SnackBar(content: Text(msg), backgroundColor: isError ? Colors.red : Colors.green),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 900;
-
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final scaffoldBg = isDark ? Theme.of(context).scaffoldBackgroundColor : const Color(0xFFF7F8FC);
     final cardBg = isDark ? Theme.of(context).cardColor : Colors.white;
@@ -670,9 +621,8 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Roles & Permissions Management', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFF5B4CF0), fontFamily: 'Outfit')),
-        backgroundColor: cardBg,
-        foregroundColor: isDark ? Colors.white : const Color(0xFF1E293B),
+        title: const Text('Roles & Permissions Management', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white, fontFamily: 'Outfit')),
+        backgroundColor: const Color(0xFF5B4CF0),
         elevation: 0,
         actions: [
           Padding(
@@ -682,17 +632,13 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
               icon: const Icon(Icons.person_add_rounded, size: 16),
               label: Text(isDesktop ? 'Assign Role to Employee' : 'Assign Role', style: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF5B4CF0),
-                foregroundColor: Colors.white,
+                backgroundColor: Colors.white,
+                foregroundColor: const Color(0xFF5B4CF0),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0), height: 1),
-        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -700,16 +646,14 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
               ? Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Desktop Left Panel: Roles list
                     Container(
-                      width: 320,
+                      width: 340,
                       decoration: BoxDecoration(
                         color: cardBg,
                         border: Border(right: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0))),
                       ),
                       child: _buildRolesList(),
                     ),
-                    // Desktop Right Panel: Permission settings
                     Expanded(
                       child: _buildPermissionSettingsPanel(),
                     ),
@@ -717,7 +661,6 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
                 )
               : Column(
                   children: [
-                    // Mobile Top bar Selector
                     Container(
                       height: 64,
                       decoration: BoxDecoration(
@@ -735,9 +678,9 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
                               child: TextButton.icon(
                                 onPressed: _showCreateRoleDialog,
                                 icon: const Icon(Icons.add, size: 16, color: Color(0xFF5B4CF0)),
-                                label: const Text('Add Role', style: TextStyle(fontSize: 12, color: Color(0xFF5B4CF0), fontWeight: FontWeight.bold)),
+                                label: const Text('Add Role', style: TextStyle(fontSize: 12, color: Color(0xFF5B4CF0), fontWeight: FontWeight.bold, fontFamily: 'Outfit')),
                                 style: TextButton.styleFrom(
-                                  backgroundColor: const Color(0xFF5B4CF0).withOpacity(0.08),
+                                  backgroundColor: const Color(0xFF5B4CF0).withValues(alpha: 0.08),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                                   padding: const EdgeInsets.symmetric(horizontal: 16),
                                 ),
@@ -752,11 +695,12 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
                             child: ChoiceChip(
                               label: Text(r['roleName']),
                               selected: isSelected,
-                              selectedColor: const Color(0xFF5B4CF0).withOpacity(0.12),
+                              selectedColor: const Color(0xFF5B4CF0).withValues(alpha: 0.12),
                               labelStyle: TextStyle(
-                                color: isSelected ? const Color(0xFF5B4CF0) : const Color(0xFF475569),
+                                color: isSelected ? const Color(0xFF5B4CF0) : (isDark ? Colors.white70 : const Color(0xFF475569)),
                                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                 fontSize: 13,
+                                fontFamily: 'Outfit',
                               ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
@@ -789,13 +733,13 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Defined Roles', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isDark ? Colors.white : const Color(0xFF1E293B))),
+              Text('Company Roles', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : const Color(0xFF1E293B), fontFamily: 'Outfit')),
               IconButton(
-                icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF5B4CF0), size: 22),
+                icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF5B4CF0), size: 24),
                 onPressed: _showCreateRoleDialog,
                 tooltip: 'Add Custom Role',
               ),
@@ -809,7 +753,7 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
             onChanged: (v) => setState(() => _roleSearchQuery = v.trim().toLowerCase()),
             decoration: InputDecoration(
               hintText: 'Search roles...',
-              hintStyle: const TextStyle(fontSize: 12),
+              hintStyle: const TextStyle(fontSize: 12, fontFamily: 'Outfit'),
               prefixIcon: const Icon(Icons.search_rounded, size: 18),
               suffixIcon: _roleSearchQuery.isNotEmpty
                   ? IconButton(
@@ -834,84 +778,110 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(16.0),
                     child: Text(
-                      _roleSearchQuery.isEmpty ? 'No custom roles created.' : 'No roles found.',
-                      style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.black54),
+                      _roleSearchQuery.isEmpty ? 'No custom roles created for this company yet.' : 'No roles found.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.black54, fontFamily: 'Outfit'),
                     ),
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(14),
                   itemCount: filteredRoles.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final r = filteredRoles[index];
                     final isSelected = r['roleId'] == _selectedRoleId;
-                    final isSystem = r['isSystemRole'] as bool;
+                    final roleId = r['roleId'] as String;
+                    final assignedUsers = _assignedUsersByRole[roleId] ?? [];
+                    final userNames = assignedUsers.map((u) => u.name).join(', ');
 
-              return InkWell(
-                onTap: () => _selectRole(r),
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF5B4CF0).withOpacity(0.10) : (isDark ? const Color(0xFF0F172A) : Colors.transparent),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isSelected ? const Color(0xFF5B4CF0) : borderCol,
-                      width: isSelected ? 1.5 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
+                    return InkWell(
+                      onTap: () => _selectRole(r),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isSelected ? const Color(0xFF5B4CF0).withValues(alpha: 0.10) : (isDark ? const Color(0xFF0F172A) : Colors.white),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isSelected ? const Color(0xFF5B4CF0) : borderCol,
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              r['roleName'],
-                              style: TextStyle(
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                fontSize: 14,
-                                color: isSelected ? const Color(0xFF5B4CF0) : (isDark ? Colors.white : const Color(0xFF1E293B)),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    r['roleName'],
+                                    style: TextStyle(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                      fontSize: 15,
+                                      color: isSelected ? const Color(0xFF5B4CF0) : (isDark ? Colors.white : const Color(0xFF1E293B)),
+                                      fontFamily: 'Outfit',
+                                    ),
+                                  ),
+                                ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFFF59E0B)),
+                                      onPressed: () => _showEditRoleDialog(r),
+                                      constraints: const BoxConstraints(),
+                                      padding: EdgeInsets.zero,
+                                      tooltip: 'Edit Role',
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFEF4444)),
+                                      onPressed: () => _confirmDeleteRole(r),
+                                      constraints: const BoxConstraints(),
+                                      padding: EdgeInsets.zero,
+                                      tooltip: 'Delete Role',
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            if ((r['description'] ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(r['description'], style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit')),
+                            ],
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(Icons.people_alt_outlined, size: 13, color: isSelected ? const Color(0xFF5B4CF0) : const Color(0xFF64748B)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${assignedUsers.length} Employee(s)',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isSelected ? const Color(0xFF5B4CF0) : (isDark ? Colors.white70 : const Color(0xFF475569)), fontFamily: 'Outfit'),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(color: const Color(0xFF10B981).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+                                  child: const Text('Active', style: TextStyle(fontSize: 10, color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontFamily: 'Outfit')),
+                                ),
+                              ],
+                            ),
+                            if (userNames.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                'Assigned: $userNames',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit'),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              isSystem ? 'System Defined Role' : 'Custom Company Role',
-                              style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                            ),
+                            ],
                           ],
                         ),
                       ),
-                      if (isSystem)
-                        const Icon(Icons.lock_rounded, size: 14, color: Color(0xFF94A3B8))
-                      else
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined, size: 16, color: Color(0xFFF59E0B)),
-                              onPressed: () => _showEditRoleDialog(r),
-                              constraints: const BoxConstraints(),
-                              padding: EdgeInsets.zero,
-                              tooltip: 'Edit Role',
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFBA1A1A)),
-                              onPressed: () => _confirmDeleteRole(r),
-                              constraints: const BoxConstraints(),
-                              padding: EdgeInsets.zero,
-                              tooltip: 'Delete Role',
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
       ],
     );
@@ -924,15 +894,18 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
     final dividerCol = isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9);
 
     if (_selectedRoleId == null) {
-      return const Center(child: Text('No role selected.'));
+      return const Center(child: Text('No role selected.', style: TextStyle(fontFamily: 'Outfit')));
     }
+
+    final assignedUsers = _assignedUsersByRole[_selectedRoleId] ?? [];
+    final formattedDate = _selectedRoleCreatedAt != null ? DateFormat('dd MMM yyyy').format(_selectedRoleCreatedAt!) : 'N/A';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Panel Header Card
         Container(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(20.0),
           decoration: BoxDecoration(
             color: cardBg,
             border: Border(bottom: BorderSide(color: borderCol)),
@@ -940,163 +913,186 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 8,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          _selectedRoleName,
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: isDark ? Colors.white : const Color(0xFF1E293B)),
-                          overflow: TextOverflow.ellipsis,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              _selectedRoleName,
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: isDark ? Colors.white : const Color(0xFF1E293B), fontFamily: 'Outfit'),
+                            ),
+                            const SizedBox(width: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(color: const Color(0xFF5B4CF0).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+                              child: const Text('Custom Company Role', style: TextStyle(fontSize: 10, color: Color(0xFF5B4CF0), fontWeight: FontWeight.bold, fontFamily: 'Outfit')),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      if (_selectedIsSystem)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(6)),
-                          child: Text('System Role', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontWeight: FontWeight.bold)),
-                        )
-                      else
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(color: isDark ? const Color(0xFF312E81).withOpacity(0.4) : const Color(0xFFE0E7FF), borderRadius: BorderRadius.circular(6)),
-                          child: const Text('Custom Role', style: TextStyle(fontSize: 10, color: Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
-                        ),
-                    ],
+                        if (_selectedRoleDescription.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(_selectedRoleDescription, style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit')),
+                        ],
+                      ],
+                    ),
                   ),
                   Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
                       TextButton(
                         onPressed: () {
                           final allIds = _permissionModules.values.expand((list) => list.map((p) => p['id']!)).toList();
                           setState(() => _selectedPermissions = allIds);
                         },
-                        child: const Text('Select All Global', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0))),
+                        child: const Text('Select All Global', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0), fontFamily: 'Outfit')),
                       ),
                       TextButton(
                         onPressed: () {
                           setState(() => _selectedPermissions.clear());
                         },
-                        child: const Text('Clear All', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                        child: const Text('Clear All', style: TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'Outfit')),
                       ),
                     ],
                   ),
                 ],
               ),
-              if (_selectedRoleDescription.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(_selectedRoleDescription, style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))),
+              const SizedBox(height: 12),
+              Divider(height: 1, color: dividerCol),
+              const SizedBox(height: 10),
+              // Role Summary Info Bar
+              Row(
+                children: [
+                  _infoChip(Icons.people_outline, 'Assigned Users: ${assignedUsers.length}', isDark),
+                  const SizedBox(width: 12),
+                  _infoChip(Icons.verified_outlined, 'Permissions: ${_selectedPermissions.length} Granted', isDark),
+                  const SizedBox(width: 12),
+                  _infoChip(Icons.calendar_today_outlined, 'Created: $formattedDate', isDark),
+                ],
+              ),
+              if (assignedUsers.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Assigned Employees: ${assignedUsers.map((u) => u.name).join(', ')}',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: isDark ? Colors.white70 : const Color(0xFF475569), fontFamily: 'Outfit'),
+                ),
               ],
             ],
           ),
         ),
 
-        // Settings Body List
+        // Settings Body List (Permission Configuration Matrix)
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.all(20.0),
             children: _permissionModules.keys.map((moduleName) {
               final modulePerms = _permissionModules[moduleName]!;
               final moduleIds = modulePerms.map((p) => p['id']!).toList();
               final allModuleSelected = moduleIds.every((id) => _selectedPermissions.contains(id));
 
               return Container(
-                margin: const EdgeInsets.only(bottom: 24),
-                decoration: BoxDecoration(
+                margin: const EdgeInsets.only(bottom: 20),
+                child: Material(
                   color: cardBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: borderCol),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(left: 20, right: 12, top: 12, bottom: 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            moduleName.toUpperCase(),
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF5B4CF0), letterSpacing: 1.1),
-                          ),
-                          Row(
-                            children: [
-                              TextButton(
-                                onPressed: () {
-                                  setState(() {
-                                    if (allModuleSelected) {
-                                      _selectedPermissions.removeWhere((id) => moduleIds.contains(id));
-                                    } else {
-                                      for (final id in moduleIds) {
-                                        if (!_selectedPermissions.contains(id)) {
-                                          _selectedPermissions.add(id);
-                                        }
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(color: borderCol),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16, right: 12, top: 12, bottom: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              moduleName.toUpperCase(),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF5B4CF0), letterSpacing: 1.1, fontFamily: 'Outfit'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  if (allModuleSelected) {
+                                    _selectedPermissions.removeWhere((id) => moduleIds.contains(id));
+                                  } else {
+                                    for (final id in moduleIds) {
+                                      if (!_selectedPermissions.contains(id)) {
+                                        _selectedPermissions.add(id);
                                       }
                                     }
-                                  });
-                                },
-                                child: Text(
-                                  allModuleSelected ? 'Clear Module' : 'Select All',
-                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0)),
-                                ),
+                                  }
+                                });
+                              },
+                              child: Text(
+                                allModuleSelected ? 'Clear Module' : 'Select All',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0), fontFamily: 'Outfit'),
                               ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    Divider(height: 1, color: dividerCol),
-                    ListView.separated(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: modulePerms.length,
-                      separatorBuilder: (_, __) => Divider(height: 1, color: dividerCol),
-                      itemBuilder: (context, idx) {
-                        final perm = modulePerms[idx];
-                        final permId = perm['id']!;
-                        final isChecked = _selectedPermissions.contains(permId);
-
-                        return SwitchListTile(
-                          activeColor: const Color(0xFF5B4CF0),
-                          activeTrackColor: const Color(0xFF5B4CF0).withOpacity(0.3),
-                          inactiveThumbColor: isDark ? const Color(0xFF94A3B8) : Colors.white,
-                          inactiveTrackColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                          title: Text(
-                            perm['name']!,
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1E293B)),
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              perm['desc']!,
-                              style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), height: 1.3),
                             ),
-                          ),
-                          value: isChecked,
-                          onChanged: (val) {
-                            setState(() {
-                              if (val) {
-                                if (!_selectedPermissions.contains(permId)) {
-                                  _selectedPermissions.add(permId);
+                          ],
+                        ),
+                      ),
+                      Divider(height: 1, color: dividerCol),
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: modulePerms.length,
+                        separatorBuilder: (_, __) => Divider(height: 1, color: dividerCol),
+                        itemBuilder: (context, idx) {
+                          final perm = modulePerms[idx];
+                          final permId = perm['id']!;
+                          final isChecked = _selectedPermissions.contains(permId);
+
+                          return SwitchListTile(
+                            activeColor: const Color(0xFF5B4CF0),
+                            activeTrackColor: const Color(0xFF5B4CF0).withValues(alpha: 0.3),
+                            inactiveThumbColor: isDark ? const Color(0xFF94A3B8) : Colors.white,
+                            inactiveTrackColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            title: Row(
+                              children: [
+                                Text(
+                                  isChecked ? '✓ ' : '✗ ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: isChecked ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                Text(
+                                  perm['name']!,
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isDark ? Colors.white : const Color(0xFF1E293B), fontFamily: 'Outfit'),
+                                ),
+                              ],
+                            ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 2.0, left: 18),
+                              child: Text(
+                                perm['desc']!,
+                                style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit'),
+                              ),
+                            ),
+                            value: isChecked,
+                            onChanged: (val) {
+                              setState(() {
+                                if (val) {
+                                  if (!_selectedPermissions.contains(permId)) {
+                                    _selectedPermissions.add(permId);
+                                  }
+                                } else {
+                                  _selectedPermissions.remove(permId);
                                 }
-                              } else {
-                                _selectedPermissions.remove(permId);
-                              }
-                            });
-                          },
-                        );
-                      },
-                    ),
-                  ],
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
               );
             }).toList(),
@@ -1105,27 +1101,45 @@ class _RolePermissionsScreenState extends ConsumerState<RolePermissionsScreen> {
 
         // Action Buttons Bottom Bar
         Container(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.all(16.0),
           decoration: BoxDecoration(
             color: cardBg,
             border: Border(top: BorderSide(color: borderCol)),
           ),
           child: SizedBox(
-            height: 52,
+            height: 48,
             child: ElevatedButton.icon(
               onPressed: _savePermissions,
               icon: const Icon(Icons.save_rounded, size: 18),
-              label: const Text('Save Role Permissions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              label: const Text('Save Role Permissions', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Outfit')),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF5B4CF0),
                 foregroundColor: Colors.white,
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _infoChip(IconData icon, String label, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: const Color(0xFF5B4CF0)),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(fontSize: 11, color: isDark ? Colors.white70 : const Color(0xFF475569), fontWeight: FontWeight.w600, fontFamily: 'Outfit')),
+        ],
+      ),
     );
   }
 }

@@ -5,6 +5,7 @@ import '../../../../shared/models/company_model.dart';
 import '../../../../shared/utils/company_password_helper.dart';
 import 'shift_management_screen.dart';
 import 'holiday_management_screen.dart';
+import '../../../../shared/utils/app_notification.dart';
 
 class CompanyConfigurationScreen extends ConsumerStatefulWidget {
   const CompanyConfigurationScreen({super.key});
@@ -333,9 +334,7 @@ class _CompanyConfigurationScreenState extends ConsumerState<CompanyConfiguratio
                       await Future.delayed(const Duration(milliseconds: 600));
                       if (mounted) {
                         setState(() => _isSaving = false);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Company configuration saved successfully!'), backgroundColor: Colors.green),
-                        );
+                        AppNotification.showSuccess(context, 'Company configuration saved successfully!');
                       }
                     },
               icon: _isSaving

@@ -3,6 +3,7 @@ import 'package:csv/csv.dart';
 
 import '../../../shared/services/file_download_service.dart';
 import '../../../shared/utils/csv_export_helper.dart';
+import '../../../shared/utils/app_notification.dart';
 
 class CsvExportService {
   /// Exports raw rows to CSV after running safety sanitization on all values.
@@ -33,13 +34,7 @@ class CsvExportService {
       );
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$filename downloaded to your Downloads folder.'),
-            backgroundColor: const Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppNotification.showSuccess(context, '$filename downloaded to your Downloads folder.');
       }
     } catch (e) {
       if (context.mounted) {

@@ -1955,21 +1955,25 @@ class DashboardScreen extends ConsumerWidget {
         'icon': Icons.payments_rounded,
         'route': '/company-admin/payroll',
       },
+      /*
       {
         'title': 'Payroll Settings',
         'icon': Icons.settings_suggest_rounded,
         'route': '/company-admin/payroll-settings',
       },
+      */
       {
         'title': 'Salary Structures',
         'icon': Icons.account_tree_rounded,
         'route': '/company-admin/salary-structures',
       },
+      /*
       {
         'title': 'Salary Components',
         'icon': Icons.list_rounded,
         'route': '/company-admin/salary-components',
       },
+      */
       {
         'title': 'Salary Payroll',
         'icon': Icons.wallet_rounded,
@@ -1983,7 +1987,7 @@ class DashboardScreen extends ConsumerWidget {
       {
         'title': 'PF / ESI / Tax',
         'icon': Icons.percent_rounded,
-        'route': '/company-admin/statutory',
+        'route': '/company-admin/pf-esi-tax',
       },
     ];
 

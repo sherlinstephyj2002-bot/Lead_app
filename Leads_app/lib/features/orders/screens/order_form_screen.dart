@@ -6,6 +6,7 @@ import '../../../shared/providers/providers.dart';
 import '../../../shared/models/lead_model.dart';
 import '../../../shared/models/order_model.dart';
 import '../../../shared/models/user_model.dart';
+import '../../../shared/utils/app_notification.dart';
 
 class OrderFormScreen extends ConsumerStatefulWidget {
   final LeadModel? wonLead;
@@ -79,6 +80,7 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
         await ref.read(ordersProvider.notifier).updateOrder(updatedOrder);
         if (mounted) {
           context.pop();
+          AppNotification.showSuccess(context, 'Order updated successfully');
         }
       } else if (widget.wonLead != null) {
         // Converting a Lead to an Order
@@ -90,6 +92,7 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
         if (mounted) {
           context.pop(); // Pop form
           context.pop(); // Pop lead details screen back to leads list
+          AppNotification.showSuccess(context, 'Lead converted to Order successfully');
         }
       } else {
         // Creating a standalone order
@@ -114,6 +117,7 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
         await ref.read(ordersProvider.notifier).createOrder(newOrder);
         if (mounted) {
           context.pop();
+          AppNotification.showSuccess(context, 'Order saved successfully');
         }
       }
     }

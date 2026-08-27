@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:csv/csv.dart';
 import 'package:worktrack/shared/models/export_job_model.dart';
 import 'package:worktrack/shared/providers/export_queue_provider.dart';
 import 'package:worktrack/shared/services/file_download_service.dart';
 import 'package:worktrack/shared/utils/csv_export_helper.dart';
+import '../utils/app_notification.dart';
 
 class ExportQueueSheet extends ConsumerStatefulWidget {
   const ExportQueueSheet({super.key});
@@ -46,13 +46,7 @@ class _ExportQueueSheetState extends ConsumerState<ExportQueueSheet> {
       await FileDownloadService.downloadCsv(csvContent: csvContent, fileName: fileName);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$fileName downloaded to your Downloads folder.'),
-            backgroundColor: const Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppNotification.showSuccess(context, '$fileName downloaded to your Downloads folder.');
       }
     } catch (e) {
       if (mounted) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:worktrack/shared/providers/providers.dart';
 import 'package:worktrack/shared/models/company_model.dart';
+import 'package:worktrack/shared/utils/app_notification.dart';
 
 class FeatureManagementScreen extends ConsumerStatefulWidget {
   const FeatureManagementScreen({super.key});
@@ -46,13 +47,9 @@ class _FeatureManagementScreenState extends ConsumerState<FeatureManagementScree
       ref.invalidate(companyProvider);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '$featureName module ${newValue ? "enabled" : "disabled"} successfully.',
-            ),
-            backgroundColor: Colors.green,
-          ),
+        AppNotification.showSuccess(
+          context,
+          '$featureName module ${newValue ? "enabled" : "disabled"} successfully.',
         );
       }
     } catch (e) {

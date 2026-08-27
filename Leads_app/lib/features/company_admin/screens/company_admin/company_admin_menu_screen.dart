@@ -74,10 +74,12 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
         'title': 'Monthly Payroll Processing',
         'subtitle': 'Verify working days, overtime, LOP & submit monthly payroll',
         'icon': Icons.account_balance_wallet_rounded,
-        'route': '/company-admin/payroll-processing',
+        'route': '/company-admin/monthly-payroll',
         'color': const Color(0xFF0EA5E9),
         'permission': 'payroll.manage',
       },
+      // Temporarily hidden per user request: Salary Components & Payroll Settings
+      /*
       {
         'category': 'SALARY & PAYROLL',
         'title': 'Salary Components',
@@ -87,6 +89,7 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
         'color': const Color(0xFFF59E0B),
         'permission': 'payroll.manage',
       },
+      */
       {
         'category': 'SALARY & PAYROLL',
         'title': 'Salary Structure Templates',
@@ -105,6 +108,7 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
         'color': const Color(0xFF8B5CF6),
         'permission': 'payroll.manage',
       },
+      /*
       {
         'category': 'SALARY & PAYROLL',
         'title': 'Payroll Settings',
@@ -114,6 +118,7 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
         'color': const Color(0xFFEC4899),
         'permission': 'payroll.manage',
       },
+      */
 
       // 3. COMPANY ADMINISTRATION
       {

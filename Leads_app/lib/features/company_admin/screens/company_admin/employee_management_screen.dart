@@ -11,6 +11,7 @@ import 'package:worktrack/shared/providers/providers.dart';
 import 'package:worktrack/shared/models/user_model.dart';
 import 'package:worktrack/shared/utils/employee_id_generator.dart';
 import 'package:worktrack/shared/utils/app_validators.dart';
+import 'package:worktrack/shared/utils/app_notification.dart';
 import 'package:worktrack/shared/widgets/company_logo_avatar.dart';
 import 'package:worktrack/shared/widgets/app_user_avatar.dart';
 import 'package:worktrack/shared/widgets/subscription_upgrade_dialog.dart';
@@ -790,6 +791,7 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
   }) {
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController(text: existingEmp?.name ?? '');
+    final empIdCtrl = TextEditingController(text: existingEmp?.employeeId ?? '');
     final phoneCtrl = TextEditingController(text: existingEmp?.phoneNumber ?? '');
     final personalEmailCtrl = TextEditingController(text: existingEmp?.employeeEmail ?? '');
 
@@ -906,7 +908,9 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                 ? selectedSalaryStructureId
                 : null;
 
-            final roleItems = [
+            final customRoles = ref.watch(companyCustomRolesProvider).value ?? [];
+            final roleItems = <String>{
+              if (customRoles.isNotEmpty) ...customRoles,
               UserRoles.companyAdmin,
               UserRoles.hrAdmin,
               UserRoles.hrExecutive,
@@ -914,334 +918,475 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
               UserRoles.manager,
               UserRoles.teamLeader,
               UserRoles.employee,
-            ];
+              if (selectedRole.isNotEmpty) selectedRole,
+            }.toList();
+
             final validRole = roleItems.contains(selectedRole)
                 ? selectedRole
-                : UserRoles.employee;
+                : (roleItems.isNotEmpty ? roleItems.first : UserRoles.employee);
 
             final statusItems = ['active', 'suspended', 'deleted'];
             final validStatus = statusItems.contains(selectedStatus.toLowerCase().trim())
                 ? selectedStatus.toLowerCase().trim()
                 : 'active';
 
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              backgroundColor: isDark ? Theme.of(context).cardColor : Colors.white,
-              title: Text(existingEmp == null ? 'Add Employee' : 'Edit Employee Details', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1B1B24))),
-              content: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        controller: nameCtrl,
-                        style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                        decoration: _inputStyle('Full Name *', Icons.person_outline_rounded, context: context),
-                        onChanged: (val) => setModalState(() {}),
-                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Name is required' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      if (existingEmp == null) ...[
-                        Builder(
-                          builder: (context) {
-                            final companyObj = ref.watch(companyProvider).value;
-                            final adminUser = ref.watch(authProvider).user;
-                            final activeCompanyName = companyObj?.name ?? adminUser?.companyName;
+            Future<void> executeCreate() async {
+              final deptName = depts.firstWhere((d) => d.departmentId == validDeptId, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: '')).name;
+              final desigName = desigs.firstWhere((d) => d.designationId == validDesigId, orElse: () => DesignationModel(designationId: '', designationName: '', departmentId: '', designationLevel: 1, companyId: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).designationName;
+              final branchName = branches.firstWhere((b) => b.branchId == validBranchId, orElse: () => BranchModel(branchId: '', companyId: '', branchName: '', branchCode: '', email: '', phone: '', address: '', city: '', state: '', country: '', postalCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).branchName;
 
-                            final generatedCreds = EmployeeIdGenerator.generateCredentials(
-                              employeeName: nameCtrl.text.trim(),
-                              existingEmployees: employees,
-                              companyName: activeCompanyName,
-                              company: companyObj,
-                            );
+              setModalState(() { isSubmitting = true; });
+              try {
+                final credentials = await ref.read(adminEmployeesProvider.notifier).createEmployee(
+                  name: nameCtrl.text.trim(),
+                  employeeId: empIdCtrl.text.trim(),
+                  personalEmail: personalEmailCtrl.text.trim(),
+                  phoneNumber: phoneCtrl.text.trim(),
+                  departmentId: validDeptId,
+                  department: deptName.isNotEmpty ? deptName : null,
+                  designationId: validDesigId,
+                  designation: desigName.isNotEmpty ? desigName : null,
+                  managerId: validManagerId,
+                  joiningDate: selectedJoinDate,
+                  employmentType: validEmpType,
+                  profileImageUrl: _uploadedImageUrl,
+                  shiftId: validShiftId,
+                  branchId: validBranchId,
+                  branchName: branchName.isNotEmpty ? branchName : null,
+                  salaryStructureId: validSalaryStructureId,
+                  salaryStructureName: structures.where((s) => s.structureId == validSalaryStructureId).isNotEmpty ? structures.firstWhere((s) => s.structureId == validSalaryStructureId).name : null,
+                );
 
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEEF2FF),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: isDark ? const Color(0xFF4338CA) : const Color(0xFFC7D2FE)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.auto_awesome_rounded, size: 16, color: Color(0xFF4F46E5)),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Auto-Generated Employee Credentials',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                          color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF3730A3),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text('Employee ID', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF475569))),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              generatedCreds.employeeId,
-                                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5)),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text('Company Login Email', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF475569))),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              generatedCreds.companyEmail,
-                                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF4F46E5)),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 10),
-                                  const Divider(height: 1, color: Color(0xFFC7D2FE)),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Initial Login Password',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: isDark ? Colors.white70 : const Color(0xFF475569),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    "This employee will receive the company's default initial password. The employee will be required to change it after their first login.",
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF3730A3),
-                                      height: 1.3,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                        TextFormField(
-                          controller: personalEmailCtrl,
-                          style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                          decoration: _inputStyle('Personal Email *', Icons.email_outlined, hint: 'e.g. employee@gmail.com', helperText: 'Note: Personal email used for correspondence. Employee ID and internal login email are automatically assigned.', helperMaxLines: 2, context: context),
-                          validator: (v) {
-                            final err = AppValidators.validatePersonalEmail(v, isRequired: true);
-                            if (err != null) return err;
-                            return AppValidators.validatePersonalEmailUniqueness(v, employees);
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                      ] else ...[
-                        _buildReadOnlyFormWidget('Employee ID', existingEmp.employeeId ?? 'N/A'),
-                        _buildReadOnlyFormWidget('Company Code', existingEmp.companyCode ?? 'N/A'),
-                        _buildReadOnlyFormWidget('Company Name', existingEmp.companyName),
-                        TextFormField(
-                          controller: personalEmailCtrl,
-                          style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                          decoration: _inputStyle('Personal Email *', Icons.email_outlined, context: context),
-                          validator: (v) {
-                            final err = AppValidators.validatePersonalEmail(v, isRequired: true);
-                            if (err != null) return err;
-                            return AppValidators.validatePersonalEmailUniqueness(v, employees, currentUid: existingEmp.uid);
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        _buildReadOnlyFormWidget('Internal Company Email', existingEmp.companyEmail ?? existingEmp.hiddenEmail ?? existingEmp.email),
-                        _buildReadOnlyFormWidget('Created Date', DateFormat('dd MMM yyyy, hh:mm a').format(existingEmp.createdAt)),
-                      ],
-                      TextFormField(
-                        controller: phoneCtrl,
-                        keyboardType: TextInputType.phone,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                        decoration: _inputStyle('Phone Number', Icons.phone_iphone_rounded, context: context),
-                        validator: (v) => AppValidators.validateMobileNumber(v, isRequired: false),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: validDeptId,
-                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                        decoration: _inputStyle('Department', Icons.business_rounded, context: context),
-                        items: [
-                          const DropdownMenuItem<String>(value: null, child: Text('-- None / Unassigned --')),
-                          ...uniqueDepts.map((d) {
-                            return DropdownMenuItem(value: d.departmentId, child: Text(d.name));
-                          }),
-                        ],
-                        onChanged: (val) {
-                          setModalState(() {
-                            selectedDeptId = val;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: validDesigId,
-                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                        decoration: _inputStyle('Designation', Icons.badge_outlined, context: context),
-                        items: [
-                          const DropdownMenuItem<String>(value: null, child: Text('-- None / Unassigned --')),
-                          ...uniqueDesigs.map((d) {
-                            return DropdownMenuItem(value: d.designationId, child: Text(d.designationName));
-                          }),
-                        ],
-                        onChanged: (val) {
-                          setModalState(() {
-                            selectedDesigId = val;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: validRole,
-                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                        decoration: _inputStyle('Role *', Icons.admin_panel_settings_rounded, context: context),
-                        items: roleItems.map((r) {
-                          return DropdownMenuItem(value: r, child: Text(_displayRole(r)));
-                        }).toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setModalState(() {
-                              selectedRole = val;
-                            });
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: validStatus,
-                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                        decoration: _inputStyle('Status *', Icons.info_outline_rounded, context: context),
-                        items: const [
-                          DropdownMenuItem(value: 'active', child: Text('Active')),
-                          DropdownMenuItem(value: 'suspended', child: Text('Suspended')),
-                          DropdownMenuItem(value: 'deleted', child: Text('Deleted')),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) {
-                            setModalState(() {
-                              selectedStatus = val;
-                            });
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: validManagerId,
-                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                        decoration: _inputStyle('Reporting Manager (Optional)', Icons.supervised_user_circle_outlined, context: context),
-                        items: [
-                          const DropdownMenuItem<String>(value: null, child: Text('None')),
-                          ...uniqueManagers.map((e) {
-                            return DropdownMenuItem(value: e.uid, child: Text(e.name));
-                          }),
-                        ],
-                        onChanged: (val) {
-                          setModalState(() {
-                            selectedManagerId = val;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: validEmpType,
-                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                        decoration: _inputStyle('Employment Type', Icons.work_outline_rounded, context: context),
-                        items: uniqueEmploymentTypes.map((type) {
-                          return DropdownMenuItem(value: type, child: Text(type));
-                        }).toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setModalState(() {
-                              selectedEmpType = val;
-                            });
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: validShiftId,
-                        dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                        style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                        decoration: _inputStyle('Work Shift', Icons.schedule_rounded, context: context),
-                        items: [
-                          const DropdownMenuItem<String>(value: null, child: Text('-- None / Unassigned --')),
-                          ...uniqueShifts.map((s) {
-                            return DropdownMenuItem(value: s.shiftId, child: Text('${s.shiftName} (${s.startTime} - ${s.endTime})'));
-                          }),
-                        ],
-                        onChanged: (val) {
-                          setModalState(() {
-                            selectedShiftId = val;
-                          });
-                        },
-                      ),
-                      if (FeatureFlags.enableBranchManagement) ...[
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: validBranchId,
-                          decoration: _inputStyle('Assign Branch *', Icons.location_city_rounded),
-                          items: [
-                            if (validBranchId == null)
-                              const DropdownMenuItem<String>(value: null, child: Text('-- Select Branch --')),
-                            ...uniqueBranches.map((b) {
-                              return DropdownMenuItem(value: b.branchId, child: Text(b.branchName));
-                            }),
+                if (context.mounted) {
+                  Navigator.pop(ctx);
+                  _showEmployeeCredentialsDialog(
+                    context,
+                    credentials['employeeId']!,
+                    credentials['companyCode']!,
+                    credentials['companyEmail']!,
+                    credentials['tempPassword']!,
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  setModalState(() { isSubmitting = false; });
+                  final msg = e.toString().replaceAll('Exception: ', '');
+                  if (msg.contains('Free Plan employee limit reached')) {
+                    Navigator.pop(ctx);
+                    SubscriptionUpgradeDialog.show(
+                      context,
+                      title: 'Free Plan employee limit reached.',
+                      message: 'You currently have 5 active employees. Upgrade your subscription to add more employees.',
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(msg), backgroundColor: msg.contains('already exists') ? Colors.orange : Colors.red),
+                    );
+                  }
+                }
+              }
+            }
+
+            Future<void> executeEdit() async {
+              final deptName = depts.firstWhere((d) => d.departmentId == validDeptId, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: '')).name;
+              final desigName = desigs.firstWhere((d) => d.designationId == validDesigId, orElse: () => DesignationModel(designationId: '', designationName: '', departmentId: '', designationLevel: 1, companyId: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).designationName;
+              final branchName = branches.firstWhere((b) => b.branchId == validBranchId, orElse: () => BranchModel(branchId: '', companyId: '', branchName: '', branchCode: '', email: '', phone: '', address: '', city: '', state: '', country: '', postalCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).branchName;
+
+              setModalState(() { isSubmitting = true; });
+              try {
+                final updated = existingEmp!.copyWith(
+                  name: nameCtrl.text.trim(),
+                  phoneNumber: phoneCtrl.text.trim(),
+                  employeeEmail: personalEmailCtrl.text.trim(),
+                  departmentId: validDeptId,
+                  department: deptName.isNotEmpty ? deptName : null,
+                  designationId: validDesigId,
+                  designation: desigName.isNotEmpty ? desigName : null,
+                  managerId: validManagerId,
+                  joiningDate: selectedJoinDate,
+                  employmentType: validEmpType,
+                  profileImageUrl: _uploadedImageUrl,
+                  shiftId: validShiftId,
+                  branchId: validBranchId,
+                  branchName: branchName.isNotEmpty ? branchName : null,
+                  salaryStructureId: validSalaryStructureId,
+                  salaryStructureName: structures.where((s) => s.structureId == validSalaryStructureId).isNotEmpty ? structures.firstWhere((s) => s.structureId == validSalaryStructureId).name : null,
+                  role: selectedRole,
+                  status: selectedStatus,
+                );
+
+                await ref.read(adminEmployeesProvider.notifier).editEmployee(updated);
+
+                if (context.mounted) {
+                  Navigator.pop(ctx);
+                  AppNotification.showSuccess(context, 'Employee profile updated successfully.');
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  setModalState(() { isSubmitting = false; });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to update employee: $e'), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            }
+
+            void handleSubmission() {
+              if (formKey.currentState!.validate()) {
+                if (existingEmp == null) {
+                  final company = ref.read(companyProvider).value;
+                  final isFreePlan = company?.isFreePlan ?? true;
+                  final activeCount = company?.activeEmployees ?? 0;
+
+                  if (isFreePlan && activeCount >= 5) {
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (dialogCtx) => AlertDialog(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        title: const Row(
+                          children: [
+                            Icon(Icons.workspace_premium_rounded, color: Color(0xFFF59E0B), size: 28),
+                            SizedBox(width: 10),
+                            Text('Upgrade Subscription', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                           ],
-                          onChanged: (val) {
-                            setModalState(() {
-                              selectedBranchId = val;
-                            });
-                          },
-                          validator: (v) => (v == null && FeatureFlags.enableBranchManagement) ? 'Branch assignment is required' : null,
                         ),
-                      ],
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: validSalaryStructureId,
-                        decoration: _inputStyle('Salary Structure', Icons.account_balance_wallet_rounded),
-                        items: [
-                          const DropdownMenuItem<String>(value: null, child: Text('-- None --')),
-                          ...uniqueStructures.map((s) {
-                            return DropdownMenuItem(value: s.structureId, child: Text(s.name));
-                          }),
+                        content: const Text('You currently have 5 active employees. Upgrade your subscription to add more employees.'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Cancel')),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white),
+                            onPressed: () {
+                              Navigator.pop(dialogCtx);
+                              Navigator.pop(ctx);
+                              context.go('/company/subscription');
+                            },
+                            child: const Text('Upgrade Plan'),
+                          ),
                         ],
-                        onChanged: (val) {
-                          setModalState(() {
-                            selectedSalaryStructureId = val;
-                          });
-                        },
                       ),
-                      const SizedBox(height: 16),
-                      // Date Picker Row
-                      Row(
+                    );
+                    return;
+                  }
+                  executeCreate();
+                } else {
+                  executeEdit();
+                }
+              }
+            }
+
+            Widget _buildFieldWrapper(String labelText, bool isRequired, Widget child) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6.0),
+                    child: RichText(
+                      text: TextSpan(
+                        text: labelText,
+                        style: TextStyle(
+                          fontFamily: 'Inter',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
+                        ),
+                        children: [
+                          if (isRequired)
+                            const TextSpan(
+                              text: ' *',
+                              style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold),
+                            )
+                          else
+                            TextSpan(
+                              text: ' (Optional)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.normal,
+                                color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  child,
+                ],
+              );
+            }
+
+            Widget _buildSectionHeader(String title) {
+              return Padding(
+                padding: const EdgeInsets.only(top: 14.0, bottom: 10.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontFamily: 'Inter',
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                        color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Divider(height: 1, color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                  ],
+                ),
+              );
+            }
+
+            Widget _buildRowOrStack(Widget first, Widget second, bool isDesktop) {
+              if (isDesktop) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: first),
+                    const SizedBox(width: 16),
+                    Expanded(child: second),
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  first,
+                  const SizedBox(height: 12),
+                  second,
+                ],
+              );
+            }
+
+            InputDecoration _cleanInputDecoration(IconData icon, {String? hintText}) {
+              return InputDecoration(
+                hintText: hintText,
+                hintStyle: TextStyle(fontFamily: 'Inter', fontSize: 13, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8)),
+                prefixIcon: Icon(icon, size: 18, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                filled: true,
+                fillColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFF5B4CF0), width: 1.5),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1),
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+                ),
+                errorStyle: const TextStyle(fontSize: 11, color: Color(0xFFEF4444), height: 1.1),
+              );
+            }
+
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              backgroundColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+              elevation: 8,
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isDesktop = constraints.maxWidth >= 540;
+
+                    // Form Fields
+                    final nameField = TextFormField(
+                      controller: nameCtrl,
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                      decoration: _cleanInputDecoration(Icons.person_outline_rounded, hintText: 'Enter full name'),
+                      onChanged: (val) => setModalState(() {}),
+                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Full Name is required' : null,
+                    );
+
+                    final empIdField = existingEmp == null
+                        ? TextFormField(
+                            controller: empIdCtrl,
+                            style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                            decoration: _cleanInputDecoration(Icons.badge_outlined, hintText: 'e.g. EMP001'),
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) return 'Employee ID is required';
+                              return AppValidators.validateEmployeeIdUniqueness(v, employees);
+                            },
+                          )
+                        : _buildReadOnlyFormWidget('Employee ID', existingEmp.employeeId ?? 'N/A');
+
+                    final emailField = TextFormField(
+                      controller: personalEmailCtrl,
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                      decoration: _cleanInputDecoration(Icons.email_outlined, hintText: 'e.g. employee@gmail.com'),
+                      validator: (v) {
+                        final err = AppValidators.validatePersonalEmail(v, isRequired: true);
+                        if (err != null) return err;
+                        return AppValidators.validatePersonalEmailUniqueness(v, employees, currentUid: existingEmp?.uid);
+                      },
+                    );
+
+                    final phoneField = TextFormField(
+                      controller: phoneCtrl,
+                      keyboardType: TextInputType.phone,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                      decoration: _cleanInputDecoration(Icons.phone_iphone_rounded, hintText: 'e.g. 9876543210'),
+                      validator: (v) => AppValidators.validateMobileNumber(v, isRequired: false),
+                    );
+
+                    final deptDropdown = DropdownButtonFormField<String>(
+                      value: validDeptId,
+                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                      decoration: _cleanInputDecoration(Icons.business_rounded, hintText: 'Select Department'),
+                      icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                      items: [
+                        if (validDeptId == null || existingEmp != null)
+                          const DropdownMenuItem<String>(value: null, child: Text('Select Department')),
+                        ...uniqueDepts.map((d) {
+                          return DropdownMenuItem(value: d.departmentId, child: Text(d.name));
+                        }),
+                      ],
+                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Department selection is required' : null,
+                      onChanged: (val) {
+                        setModalState(() {
+                          selectedDeptId = val;
+                        });
+                      },
+                    );
+
+                    final desigDropdown = DropdownButtonFormField<String>(
+                      value: validDesigId,
+                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                      decoration: _cleanInputDecoration(Icons.badge_outlined, hintText: 'Select Designation'),
+                      icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                      items: [
+                        if (validDesigId == null || existingEmp != null)
+                          const DropdownMenuItem<String>(value: null, child: Text('Select Designation')),
+                        ...uniqueDesigs.map((d) {
+                          return DropdownMenuItem(value: d.designationId, child: Text(d.designationName));
+                        }),
+                      ],
+                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Designation selection is required' : null,
+                      onChanged: (val) {
+                        setModalState(() {
+                          selectedDesigId = val;
+                        });
+                      },
+                    );
+
+                    final managerDropdown = DropdownButtonFormField<String>(
+                      value: validManagerId,
+                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                      decoration: _cleanInputDecoration(Icons.supervised_user_circle_outlined, hintText: 'Select Reporting Manager'),
+                      icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                      items: [
+                        const DropdownMenuItem<String>(value: null, child: Text('Select Reporting Manager')),
+                        ...uniqueManagers.map((e) {
+                          return DropdownMenuItem(value: e.uid, child: Text(e.name));
+                        }),
+                      ],
+                      onChanged: (val) {
+                        setModalState(() {
+                          selectedManagerId = val;
+                        });
+                      },
+                    );
+
+                    final empTypeDropdown = DropdownButtonFormField<String>(
+                      value: validEmpType,
+                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                      decoration: _cleanInputDecoration(Icons.work_outline_rounded, hintText: 'Select Employment Type'),
+                      icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                      items: uniqueEmploymentTypes.map((type) {
+                        return DropdownMenuItem(value: type, child: Text(type));
+                      }).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          setModalState(() {
+                            selectedEmpType = val;
+                          });
+                        }
+                      },
+                    );
+
+                    final branchDropdown = FeatureFlags.enableBranchManagement
+                        ? DropdownButtonFormField<String>(
+                            value: validBranchId,
+                            dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                            style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                            decoration: _cleanInputDecoration(Icons.location_city_rounded, hintText: 'Select Branch'),
+                            icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                            items: [
+                              if (validBranchId == null)
+                                const DropdownMenuItem<String>(value: null, child: Text('Select Branch')),
+                              ...uniqueBranches.map((b) {
+                                return DropdownMenuItem(value: b.branchId, child: Text(b.branchName));
+                              }),
+                            ],
+                            onChanged: (val) {
+                              setModalState(() {
+                                selectedBranchId = val;
+                              });
+                            },
+                            validator: (v) => (v == null && FeatureFlags.enableBranchManagement) ? 'Branch assignment is required' : null,
+                          )
+                        : const SizedBox();
+
+                    final salaryStructureDropdown = DropdownButtonFormField<String>(
+                      value: validSalaryStructureId,
+                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                      decoration: _cleanInputDecoration(Icons.account_balance_wallet_rounded, hintText: 'Select Salary Structure'),
+                      icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                      items: [
+                        const DropdownMenuItem<String>(value: null, child: Text('Select Salary Structure')),
+                        ...uniqueStructures.map((s) {
+                          return DropdownMenuItem(value: s.structureId, child: Text(s.name));
+                        }),
+                      ],
+                      onChanged: (val) {
+                        setModalState(() {
+                          selectedSalaryStructureId = val;
+                        });
+                      },
+                    );
+
+                    final joiningDatePicker = Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Joining Date: ${DateFormat('dd/MM/yyyy').format(selectedJoinDate)}', style: const TextStyle(fontFamily: 'Inter', fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF1B1B24))),
+                          Row(
+                            children: [
+                              Icon(Icons.calendar_today_rounded, size: 18, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                              const SizedBox(width: 10),
+                              Text(
+                                DateFormat('dd MMM yyyy').format(selectedJoinDate),
+                                style: TextStyle(
+                                  fontFamily: 'Inter',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: isDark ? Colors.white : const Color(0xFF1B1B24),
+                                ),
+                              ),
+                            ],
+                          ),
                           TextButton(
                             onPressed: () async {
                               final picked = await showDatePicker(
@@ -1256,256 +1401,164 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                                 });
                               }
                             },
-                            child: const Text('Change'),
+                            child: const Text('Change', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0))),
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
-                  child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600)),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF5B4CF0),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: isSubmitting
-                      ? null
-                      : () async {
-                          if (formKey.currentState!.validate()) {
+                    );
 
-                      final deptName = depts.firstWhere((d) => d.departmentId == validDeptId, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: '')).name;
-                      final desigName = desigs.firstWhere((d) => d.designationId == validDesigId, orElse: () => DesignationModel(designationId: '', designationName: '', departmentId: '', designationLevel: 1, companyId: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).designationName;
-                      final branchName = branches.firstWhere((b) => b.branchId == validBranchId, orElse: () => BranchModel(branchId: '', companyId: '', branchName: '', branchCode: '', email: '', phone: '', address: '', city: '', state: '', country: '', postalCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).branchName;
-
-                      Future<void> executeCreate() async {
-                        setModalState(() { isSubmitting = true; });
-                        try {
-                          final credentials = await ref.read(adminEmployeesProvider.notifier).createEmployee(
-                            name: nameCtrl.text.trim(),
-                            personalEmail: personalEmailCtrl.text.trim(),
-                            phoneNumber: phoneCtrl.text.trim(),
-                            departmentId: validDeptId,
-                            department: deptName.isNotEmpty ? deptName : null,
-                            designationId: validDesigId,
-                            designation: desigName.isNotEmpty ? desigName : null,
-                            managerId: validManagerId,
-                            joiningDate: selectedJoinDate,
-                            employmentType: validEmpType,
-                            profileImageUrl: _uploadedImageUrl,
-                            shiftId: validShiftId,
-                            branchId: validBranchId,
-                            branchName: branchName.isNotEmpty ? branchName : null,
-                            salaryStructureId: validSalaryStructureId,
-                            salaryStructureName: structures.where((s) => s.structureId == validSalaryStructureId).isNotEmpty ? structures.firstWhere((s) => s.structureId == validSalaryStructureId).name : null,
-                          );
-
-                          if (context.mounted) {
-                            Navigator.pop(ctx);
-                            _showEmployeeCredentialsDialog(
-                              context,
-                              credentials['employeeId']!,
-                              credentials['companyCode']!,
-                              credentials['companyEmail']!,
-                              credentials['tempPassword']!,
-                            );
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            setModalState(() { isSubmitting = false; });
-                            final msg = e.toString().replaceAll('Exception: ', '');
-                            if (msg.contains('Free Plan employee limit reached')) {
-                              Navigator.pop(ctx);
-                              SubscriptionUpgradeDialog.show(
-                                context,
-                                title: 'Free Plan employee limit reached.',
-                                message: 'You currently have 5 active employees. Upgrade your subscription to add more employees.',
-                              );
-                            } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(msg), backgroundColor: msg.contains('already exists') ? Colors.orange : Colors.red),
-                              );
-                            }
-                          }
-                        }
-                      }
-
-                      Future<void> executeEdit() async {
-                        setModalState(() { isSubmitting = true; });
-                        try {
-                          final updated = existingEmp!.copyWith(
-                            name: nameCtrl.text.trim(),
-                            phoneNumber: phoneCtrl.text.trim(),
-                            employeeEmail: personalEmailCtrl.text.trim(),
-                            departmentId: validDeptId,
-                            department: deptName.isNotEmpty ? deptName : null,
-                            designationId: validDesigId,
-                            designation: desigName.isNotEmpty ? desigName : null,
-                            managerId: validManagerId,
-                            joiningDate: selectedJoinDate,
-                            employmentType: validEmpType,
-                            profileImageUrl: _uploadedImageUrl,
-                            shiftId: validShiftId,
-                            branchId: validBranchId,
-                            branchName: branchName.isNotEmpty ? branchName : null,
-                            salaryStructureId: validSalaryStructureId,
-                            salaryStructureName: structures.where((s) => s.structureId == validSalaryStructureId).isNotEmpty ? structures.firstWhere((s) => s.structureId == validSalaryStructureId).name : null,
-                            role: selectedRole,
-                            status: selectedStatus,
-                          );
-
-                          await ref.read(adminEmployeesProvider.notifier).editEmployee(updated);
-
-                          if (context.mounted) {
-                            Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Employee profile updated successfully.'), backgroundColor: Colors.green),
-                            );
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            setModalState(() { isSubmitting = false; });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Failed to update employee: $e'), backgroundColor: Colors.red),
-                            );
-                          }
-                        }
-                      }
-
-                      if (existingEmp == null) {
-                        final company = ref.read(companyProvider).value;
-                        final isFreePlan = company?.isFreePlan ?? true;
-                        final activeCount = company?.activeEmployees ?? 0;
-
-                        if (isFreePlan && activeCount >= 5) {
-                          // Block creation & show professional Upgrade Subscription dialog
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (dialogCtx) => AlertDialog(
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              title: const Row(
-                                children: [
-                                  Icon(Icons.workspace_premium_rounded, color: Color(0xFFF59E0B), size: 28),
-                                  SizedBox(width: 10),
-                                  Text('Upgrade Subscription', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                                ],
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Header
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF5B4CF0).withValues(alpha: isDark ? 0.2 : 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.person_add_outlined, color: Color(0xFF5B4CF0), size: 20),
                               ),
-                              content: Column(
-                                mainAxisSize: MainAxisSize.min,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      existingEmp == null ? 'Add Employee' : 'Edit Employee Details',
+                                      style: TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 17,
+                                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Enter employee details and assign organizational information.',
+                                      style: TextStyle(
+                                        fontFamily: 'Inter',
+                                        fontSize: 12,
+                                        color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.close_rounded, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), size: 20),
+                                onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                                tooltip: 'Close',
+                              ),
+                            ],
+                          ),
+                        ),
+                        Divider(height: 1, color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+
+                        // Form Content
+                        Flexible(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                            child: Form(
+                              key: formKey,
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFFBEB),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: const Color(0xFFFDE68A)),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.info_outline_rounded, color: Color(0xFFD97706), size: 20),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            'Free Plan Limit Reached ($activeCount / 5 active employees)',
-                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF92400E)),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                  // SECTION 1: EMPLOYEE INFORMATION
+                                  _buildSectionHeader('EMPLOYEE INFORMATION'),
+                                  _buildRowOrStack(
+                                    _buildFieldWrapper('Full Name', true, nameField),
+                                    _buildFieldWrapper('Employee ID', true, empIdField),
+                                    isDesktop,
                                   ),
                                   const SizedBox(height: 14),
-                                  const Text(
-                                    'Your company is currently on the Free Plan, which supports a maximum of 5 active employees.',
-                                    style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+                                  _buildRowOrStack(
+                                    _buildFieldWrapper('Personal Email', true, emailField),
+                                    _buildFieldWrapper('Phone Number', false, phoneField),
+                                    isDesktop,
                                   ),
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF1F5F9),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('Paid Plan Benefits:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1E293B))),
-                                        SizedBox(height: 6),
-                                        Text('• Unlimited active employees', style: TextStyle(fontSize: 12, color: Color(0xFF334155))),
-                                        Text('• USD 0.50 per active employee / month', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
-                                        Text('• Google Ads removed completely', style: TextStyle(fontSize: 12, color: Color(0xFF334155))),
-                                      ],
-                                    ),
+
+                                  // SECTION 2: ORGANIZATIONAL DETAILS
+                                  const SizedBox(height: 8),
+                                  _buildSectionHeader('ORGANIZATIONAL DETAILS'),
+                                  _buildRowOrStack(
+                                    _buildFieldWrapper('Department', true, deptDropdown),
+                                    _buildFieldWrapper('Designation', true, desigDropdown),
+                                    isDesktop,
                                   ),
                                   const SizedBox(height: 14),
-                                  const Text(
-                                    'Please upgrade your subscription plan to add additional employees.',
-                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+                                  _buildRowOrStack(
+                                    _buildFieldWrapper('Reporting Manager', false, managerDropdown),
+                                    FeatureFlags.enableBranchManagement
+                                        ? _buildFieldWrapper('Assign Branch', true, branchDropdown)
+                                        : const SizedBox(),
+                                    isDesktop,
                                   ),
+
+                                  // SECTION 3: EMPLOYMENT DETAILS
+                                  const SizedBox(height: 8),
+                                  _buildSectionHeader('EMPLOYMENT DETAILS'),
+                                  _buildRowOrStack(
+                                    _buildFieldWrapper('Employment Type', false, empTypeDropdown),
+                                    _buildFieldWrapper('Salary Structure', false, salaryStructureDropdown),
+                                    isDesktop,
+                                  ),
+                                  const SizedBox(height: 14),
+                                  _buildFieldWrapper('Joining Date', false, joiningDatePicker),
                                 ],
                               ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(dialogCtx),
-                                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-                                ),
-                                ElevatedButton.icon(
-                                  icon: const Icon(Icons.bolt_rounded, size: 18),
-                                  label: const Text('Upgrade Plan Now'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF4F46E5),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                  ),
-                                  onPressed: () async {
-                                    Navigator.pop(dialogCtx);
-                                    if (company != null) {
-                                      try {
-                                        await SubscriptionService.updatePlan(company.companyId, 'Paid');
-                                        await ref.read(companyProvider.notifier).loadCompany();
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(
-                                              content: Text(r'Subscription successfully upgraded to Paid Plan ($0.50/employee).'),
-                                              backgroundColor: Colors.green,
-                                            ),
-                                          );
-                                          // Now allow creation
-                                          executeCreate();
-                                        }
-                                      } catch (e) {
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text('Failed to upgrade subscription: $e'), backgroundColor: Colors.red),
-                                          );
-                                        }
-                                      }
-                                    }
-                                  },
-                                ),
-                              ],
                             ),
-                          );
-                        } else {
-                          executeCreate();
-                        }
-                      } else {
-                        executeEdit();
-                      }
-                    }
+                          ),
+                        ),
+
+                        Divider(height: 1, color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+
+                        // Sticky Footer
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              OutlinedButton(
+                                onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
+                                  side: BorderSide(color: isDark ? const Color(0xFF475569) : const Color(0xFFCBD5E1)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                ),
+                                child: const Text('Cancel', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600)),
+                              ),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF5B4CF0),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                ),
+                                onPressed: isSubmitting ? null : handleSubmission,
+                                child: isSubmitting
+                                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                    : Text(
+                                        existingEmp == null ? 'Create Employee' : 'Save Changes',
+                                        style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold),
+                                      ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
                   },
-                  child: isSubmitting
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Text(existingEmp == null ? 'Create Employee' : 'Save Changes'),
                 ),
-              ],
+              ),
             );
           },
         );
@@ -1914,7 +1967,7 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                         await ref.read(adminEmployeesProvider.notifier).deleteEmployee(uid);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Employee deleted successfully.'), backgroundColor: Colors.green));
+                          AppNotification.showSuccess(context, 'Employee deleted successfully.');
                         }
                       } catch (e) {
                         if (context.mounted) {

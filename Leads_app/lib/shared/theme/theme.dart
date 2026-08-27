@@ -47,6 +47,11 @@ class AppTheme {
       popupMenuTheme: const PopupMenuThemeData(
         color: lightCardColor,
       ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
       cardTheme: CardThemeData(
         color: lightCardColor,
         elevation: 0,
@@ -154,6 +159,11 @@ class AppTheme {
       ),
       popupMenuTheme: const PopupMenuThemeData(
         color: darkCardColor,
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
       cardTheme: CardThemeData(
         color: darkCardColor,

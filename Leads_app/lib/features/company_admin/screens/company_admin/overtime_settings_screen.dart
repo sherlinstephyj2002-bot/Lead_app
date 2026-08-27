@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:worktrack/shared/providers/providers.dart';
 import 'package:worktrack/features/company_admin/models/overtime_settings_model.dart';
 import 'package:worktrack/features/company_admin/providers/company_admin_providers.dart';
+import 'package:worktrack/shared/utils/app_notification.dart';
 
 class OvertimeSettingsScreen extends ConsumerStatefulWidget {
   const OvertimeSettingsScreen({super.key});
@@ -257,67 +258,71 @@ class _OvertimeSettingsScreenState extends ConsumerState<OvertimeSettingsScreen>
                               if (isWide)
                                 Expanded(
                                   flex: 5,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(24),
-                                    decoration: BoxDecoration(
-                                      color: cardBg,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                                    ),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Container(
-                                              width: 36,
-                                              height: 36,
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFF007834).withValues(alpha: isDark ? 0.2 : 0.08),
-                                                borderRadius: BorderRadius.circular(10),
+                                  child: Material(
+                                    color: cardBg,
+                                    borderRadius: BorderRadius.circular(16),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(24),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Container(
+                                                width: 36,
+                                                height: 36,
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF007834).withValues(alpha: isDark ? 0.2 : 0.08),
+                                                  borderRadius: BorderRadius.circular(10),
+                                                ),
+                                                child: const Icon(Icons.shield_outlined, color: Color(0xFF007834), size: 20),
                                               ),
-                                              child: const Icon(Icons.shield_outlined, color: Color(0xFF007834), size: 20),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text('Approval Rules', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: isDark ? Colors.white : const Color(0xFF191C1E))),
-                                                  Text('Workflow & governance controls.', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF474555))),
-                                                ],
+                                              const SizedBox(width: 12),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text('Approval Rules', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: isDark ? Colors.white : const Color(0xFF191C1E))),
+                                                    Text('Workflow & governance controls.', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF474555))),
+                                                  ],
+                                                ),
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 24),
-                                        SwitchListTile(
-                                          activeColor: const Color(0xFF422CD8),
-                                          contentPadding: EdgeInsets.zero,
-                                          title: Text('Require Manager Approval', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF191C1E))),
-                                          subtitle: Text('All overtime hours must be manually reviewed and approved by reporting manager before payroll.', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF777587))),
-                                          value: _approvalRequired,
-                                          onChanged: (v) => setState(() => _approvalRequired = v),
-                                        ),
-                                        Divider(height: 24, color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
-                                        SwitchListTile(
-                                          activeColor: const Color(0xFF422CD8),
-                                          contentPadding: EdgeInsets.zero,
-                                          title: Text('Strict Compliance Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF191C1E))),
-                                          subtitle: Text('Prevent clocking in if maximum daily limit is reached. Requires Admin override.', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF777587))),
-                                          value: _strictCompliance,
-                                          onChanged: (v) => setState(() => _strictCompliance = v),
-                                        ),
-                                        Divider(height: 24, color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
-                                        SwitchListTile(
-                                          activeColor: const Color(0xFF422CD8),
-                                          contentPadding: EdgeInsets.zero,
-                                          title: Text('Auto-Notification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF191C1E))),
-                                          subtitle: Text('Notify payroll department immediately when an employee exceeds 20 hours of monthly overtime.', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF777587))),
-                                          value: _autoNotification,
-                                          onChanged: (v) => setState(() => _autoNotification = v),
-                                        ),
-                                      ],
+                                            ],
+                                          ),
+                                          const SizedBox(height: 24),
+                                          SwitchListTile(
+                                            activeColor: const Color(0xFF422CD8),
+                                            contentPadding: EdgeInsets.zero,
+                                            title: Text('Require Manager Approval', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF191C1E))),
+                                            subtitle: Text('All overtime hours must be manually reviewed and approved by reporting manager before payroll.', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF777587))),
+                                            value: _approvalRequired,
+                                            onChanged: (v) => setState(() => _approvalRequired = v),
+                                          ),
+                                          Divider(height: 24, color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+                                          SwitchListTile(
+                                            activeColor: const Color(0xFF422CD8),
+                                            contentPadding: EdgeInsets.zero,
+                                            title: Text('Strict Compliance Mode', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF191C1E))),
+                                            subtitle: Text('Prevent clocking in if maximum daily limit is reached. Requires Admin override.', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF777587))),
+                                            value: _strictCompliance,
+                                            onChanged: (v) => setState(() => _strictCompliance = v),
+                                          ),
+                                          Divider(height: 24, color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+                                          SwitchListTile(
+                                            activeColor: const Color(0xFF422CD8),
+                                            contentPadding: EdgeInsets.zero,
+                                            title: Text('Auto-Notification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF191C1E))),
+                                            subtitle: Text('Notify payroll department immediately when an employee exceeds 20 hours of monthly overtime.', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF777587))),
+                                            value: _autoNotification,
+                                            onChanged: (v) => setState(() => _autoNotification = v),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -463,9 +468,7 @@ class _OvertimeSettingsScreenState extends ConsumerState<OvertimeSettingsScreen>
 
       await ref.read(adminOvertimeSettingsProvider.notifier).saveSettings(newSettings);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Overtime settings updated successfully.'), backgroundColor: Colors.green),
-        );
+        AppNotification.showSuccess(context, 'Overtime settings updated successfully.');
       }
     }
   }

@@ -11,6 +11,7 @@ import '../../../constants/user_roles.dart';
 import '../../../constants/feature_flags.dart';
 import '../../../shared/widgets/company_logo_avatar.dart';
 import '../../../shared/utils/app_validators.dart';
+import '../../../shared/utils/app_notification.dart';
 
 class CompanyProfileScreen extends ConsumerStatefulWidget {
   const CompanyProfileScreen({super.key});
@@ -185,12 +186,7 @@ class _CompanyProfileScreenState extends ConsumerState<CompanyProfileScreen> {
 
       if (!mounted) return;
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Company logo uploaded successfully.'),
-            backgroundColor: Color(0xFF22C55E),
-          ),
-        );
+        AppNotification.showSuccess(context, 'Company logo uploaded successfully.');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -218,12 +214,7 @@ class _CompanyProfileScreenState extends ConsumerState<CompanyProfileScreen> {
 
     if (!mounted) return;
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Company logo removed successfully.'),
-          backgroundColor: Color(0xFF22C55E),
-        ),
-      );
+      AppNotification.showSuccess(context, 'Company logo removed successfully.');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -266,13 +257,8 @@ class _CompanyProfileScreenState extends ConsumerState<CompanyProfileScreen> {
 
     if (!mounted) return;
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Company profile updated successfully.'),
-          backgroundColor: Color(0xFF22C55E),
-        ),
-      );
       Navigator.pop(context);
+      AppNotification.showSuccess(context, 'Company profile updated successfully.');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

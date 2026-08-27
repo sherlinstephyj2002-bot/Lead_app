@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../../../../shared/providers/providers.dart';
 import '../../providers/company_admin_providers.dart';
+import '../../../../shared/utils/app_notification.dart';
 
 class CompanyAnnouncementsScreen extends ConsumerStatefulWidget {
   const CompanyAnnouncementsScreen({super.key});
@@ -124,9 +125,7 @@ class _CompanyAnnouncementsScreenState extends ConsumerState<CompanyAnnouncement
 
                           if (context.mounted) {
                             Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Announcement dispatched successfully!'), backgroundColor: Colors.green),
-                            );
+                            AppNotification.showSuccess(context, 'Announcement dispatched successfully!');
                           }
                         } catch (e) {
                           if (context.mounted) {

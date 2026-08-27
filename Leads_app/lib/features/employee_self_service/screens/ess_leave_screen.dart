@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../shared/providers/providers.dart';
+import '../../../shared/utils/app_notification.dart';
 
 class ESSLeaveScreen extends ConsumerWidget {
   const ESSLeaveScreen({super.key});
@@ -325,9 +326,7 @@ class ESSLeaveScreen extends ConsumerWidget {
                         reason: reasonCtrl.text.trim(),
                       );
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Leave application submitted successfully!'), backgroundColor: Colors.green),
-                    );
+                    AppNotification.showSuccess(context, 'Leave application submitted successfully!');
                   }
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white),

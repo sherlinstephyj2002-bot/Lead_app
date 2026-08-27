@@ -593,7 +593,28 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/company-admin/pf-esi-tax',
+        builder: (context, state) => const PermissionGuard(
+          permission: 'payroll.manage',
+          child: PfEsiTaxScreen(),
+        ),
+      ),
+      GoRoute(
         path: '/company-admin/payroll',
+        builder: (context, state) => const PermissionGuard(
+          permission: 'payroll.manage',
+          child: PayrollProcessingScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/company-admin/payroll-processing',
+        builder: (context, state) => const PermissionGuard(
+          permission: 'payroll.manage',
+          child: PayrollProcessingScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/company-admin/monthly-payroll',
         builder: (context, state) => const PermissionGuard(
           permission: 'payroll.manage',
           child: PayrollProcessingScreen(),

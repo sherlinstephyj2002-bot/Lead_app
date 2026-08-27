@@ -23,6 +23,9 @@ class SalaryStructureModel {
   /// Deductions map: componentId -> amount
   final Map<String, double> deductions;
 
+  /// Percentages map: componentId -> percentage rate (e.g. 40.0 for HRA)
+  final Map<String, double> componentPercentages;
+
   /// Formula string for gross pay display/audit (e.g. "Basic + Allowances")
   final String grossFormula;
 
@@ -41,6 +44,7 @@ class SalaryStructureModel {
     this.basic = 0.0,
     required this.earnings,
     required this.deductions,
+    this.componentPercentages = const {},
     this.grossFormula = 'Basic + Allowances',
     this.netFormula = 'Gross - Deductions',
     this.status = 'active',
@@ -90,6 +94,9 @@ class SalaryStructureModel {
       deductions: (map['deductions'] as Map<String, dynamic>?)
               ?.map((k, v) => MapEntry(k, (v as num).toDouble())) ??
           {},
+      componentPercentages: (map['componentPercentages'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(k, (v as num).toDouble())) ??
+          {},
       grossFormula: map['grossFormula'] ?? 'Basic + Allowances',
       netFormula: map['netFormula'] ?? 'Gross - Deductions',
       status: map['status'] ?? 'active',
@@ -107,6 +114,7 @@ class SalaryStructureModel {
       'basic': basic,
       'earnings': earnings,
       'deductions': deductions,
+      'componentPercentages': componentPercentages,
       'grossFormula': grossFormula,
       'netFormula': netFormula,
       'status': status,
@@ -123,6 +131,7 @@ class SalaryStructureModel {
     double? basic,
     Map<String, double>? earnings,
     Map<String, double>? deductions,
+    Map<String, double>? componentPercentages,
     String? grossFormula,
     String? netFormula,
     String? status,
@@ -137,6 +146,7 @@ class SalaryStructureModel {
       basic: basic ?? this.basic,
       earnings: earnings ?? this.earnings,
       deductions: deductions ?? this.deductions,
+      componentPercentages: componentPercentages ?? this.componentPercentages,
       grossFormula: grossFormula ?? this.grossFormula,
       netFormula: netFormula ?? this.netFormula,
       status: status ?? this.status,

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:uuid/uuid.dart';
 import '../../../shared/models/user_model.dart';
 import '../../../shared/models/employee_request_model.dart';
@@ -806,6 +805,7 @@ class EmployeeFormSheet extends StatefulWidget {
 class EmployeeFormSheetState extends State<EmployeeFormSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
+  late final TextEditingController _empIdCtrl;
   late final TextEditingController _phoneCtrl;
   late final TextEditingController _personalEmailCtrl;
   late final TextEditingController _designationCtrl;
@@ -814,63 +814,23 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
   String _selectedRole = UserRoles.employee;
   bool _isSaving = false;
 
-  List<String> _dbRoles = [UserRoles.employee, UserRoles.hr, UserRoles.companyAdmin];
-
-  Future<void> _loadCompanyRoles() async {
-    final user = widget.ref.read(authProvider).user;
-    if (user == null) return;
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('roles')
-          .where('companyId', isEqualTo: user.companyId)
-          .get();
-      if (snap.docs.isNotEmpty) {
-        final list = snap.docs
-            .map((doc) => UserModel.normalizeRole(doc.data()['roleName'] as String))
-            .toList();
-        
-        final systemDefaults = [
-          UserRoles.employee,
-          UserRoles.hr,
-          UserRoles.companyAdmin,
-          UserRoles.hrAdmin,
-          UserRoles.hrExecutive,
-          UserRoles.manager,
-          UserRoles.teamLeader
-        ];
-        for (final sys in systemDefaults) {
-          if (!list.contains(sys)) {
-            list.add(sys);
-          }
-        }
-
-        if (!list.contains(_selectedRole)) {
-          list.add(_selectedRole);
-        }
-
-        setState(() {
-          _dbRoles = list;
-        });
-      }
-    } catch (_) {}
-  }
-
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.existing?.name ?? '');
+    _empIdCtrl = TextEditingController(text: widget.existing?.employeeId ?? '');
     _phoneCtrl = TextEditingController(text: widget.existing?.phoneNumber ?? '');
     _personalEmailCtrl = TextEditingController(text: widget.existing?.personalEmail ?? widget.existing?.employeeEmail ?? '');
     _designationCtrl = TextEditingController(text: widget.existing?.designation ?? '');
     _departmentCtrl = TextEditingController(text: widget.existing?.department ?? '');
     _selectedRole = UserModel.normalizeRole(widget.existing?.role ?? UserRoles.employee);
     _selectedBranchId = widget.existing?.branchId;
-    _loadCompanyRoles();
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _empIdCtrl.dispose();
     _phoneCtrl.dispose();
     _personalEmailCtrl.dispose();
     _designationCtrl.dispose();
@@ -885,34 +845,119 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
     final isEdit = widget.existing != null;
 
     const primaryColor = Color(0xFF5B4CF0);
-    const outlineVariantColor = Color(0xFFC8C4D8);
 
-    InputDecoration _inputStyle(String label, IconData icon, {String? hint}) {
+    InputDecoration _cleanInputDecoration(IconData icon, {String? hintText}) {
       return InputDecoration(
-        labelText: label,
-        hintText: hint,
-        hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, fontFamily: 'Inter'),
-        labelStyle: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: Color(0xFF64748B)),
-        prefixIcon: Icon(icon, color: const Color(0xFF64748B), size: 20),
+        hintText: hintText,
+        hintStyle: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: Color(0xFF94A3B8)),
+        prefixIcon: Icon(icon, size: 18, color: const Color(0xFF64748B)),
         filled: true,
         fillColor: const Color(0xFFF8FAFC),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: outlineVariantColor.withOpacity(0.3), width: 1),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: primaryColor, width: 1.5),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFF5B4CF0), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFBA1A1A), width: 1),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFBA1A1A), width: 1.5),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
         ),
+        errorStyle: const TextStyle(fontSize: 11, color: Color(0xFFEF4444), height: 1.1),
+      );
+    }
+
+    Widget _buildFieldWrapper(String labelText, bool isRequired, Widget child) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6.0),
+            child: RichText(
+              text: TextSpan(
+                text: labelText,
+                style: const TextStyle(
+                  fontFamily: 'Inter',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF334155),
+                ),
+                children: [
+                  if (isRequired)
+                    const TextSpan(
+                      text: ' *',
+                      style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold),
+                    )
+                  else
+                    const TextSpan(
+                      text: ' (Optional)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.normal,
+                        color: Color(0xFF94A3B8),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          child,
+        ],
+      );
+    }
+
+    Widget _buildSectionHeader(String title) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 14.0, bottom: 10.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.8,
+                color: Color(0xFF4F46E5),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          ],
+        ),
+      );
+    }
+
+    Widget _buildRowOrStack(Widget first, Widget second, bool isDesktop) {
+      if (isDesktop) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: first),
+            const SizedBox(width: 16),
+            Expanded(child: second),
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          first,
+          const SizedBox(height: 12),
+          second,
+        ],
       );
     }
 
@@ -921,57 +966,33 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
       child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Handle bar
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE2E8F0),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  isEdit ? 'Edit Employee' : (isHr ? 'Request Employee Addition' : 'Add Employee'),
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1B1B24), fontFamily: 'Inter'),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isEdit
-                      ? 'Update name, role, and details.'
-                      : (isHr
-                          ? 'Submit an employee request to the company administrator for approval.'
-                          : 'Fill in details to immediately register a new employee record.'),
-                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Inter'),
-                ),
-                const SizedBox(height: 20),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 540;
 
-                // Name field
-                TextFormField(
-                  controller: _nameCtrl,
-                  decoration: _inputStyle('Full Name *', Icons.person_outline_rounded),
-                  validator: (val) => (val == null || val.trim().isEmpty) ? 'Name is required' : null,
-                  style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
-                ),
-                const SizedBox(height: 16),
+            final nameField = TextFormField(
+              controller: _nameCtrl,
+              decoration: _cleanInputDecoration(Icons.person_outline_rounded, hintText: 'Enter full name'),
+              validator: (val) => (val == null || val.trim().isEmpty) ? 'Full Name is required' : null,
+              style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
+            );
 
-                // Personal Email field
-                if (!isEdit) ...[
-                  TextFormField(
+            final empIdField = !isEdit
+                ? TextFormField(
+                    controller: _empIdCtrl,
+                    decoration: _cleanInputDecoration(Icons.badge_outlined, hintText: 'e.g. EMP001'),
+                    style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
+                    validator: (val) => (val == null || val.trim().isEmpty) ? 'Employee ID is required' : null,
+                  )
+                : const SizedBox();
+
+            final emailField = !isEdit
+                ? TextFormField(
                     controller: _personalEmailCtrl,
-                    decoration: _inputStyle('Personal Email *', Icons.email_outlined, hint: 'e.g. employee@company.com'),
+                    decoration: _cleanInputDecoration(Icons.email_outlined, hintText: 'e.g. employee@company.com'),
                     style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
                     validator: (val) {
                       if (val == null || val.trim().isEmpty) return 'Personal Email is required';
@@ -980,101 +1001,100 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                       }
                       return null;
                     },
-                  ),
-                  const SizedBox(height: 16),
-                ],
+                  )
+                : const SizedBox();
 
-                // Phone field
-                TextFormField(
-                  controller: _phoneCtrl,
-                  decoration: _inputStyle('Phone Number (optional)', Icons.phone_iphone_rounded),
-                  keyboardType: TextInputType.phone,
-                  style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
-                ),
-                const SizedBox(height: 16),
+            final phoneField = TextFormField(
+              controller: _phoneCtrl,
+              decoration: _cleanInputDecoration(Icons.phone_iphone_rounded, hintText: 'e.g. 9876543210'),
+              keyboardType: TextInputType.phone,
+              style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
+            );
 
-                // Designation dropdown
-                Consumer(
-                  builder: (context, ref, child) {
-                    final desigsAsync = ref.watch(adminDesignationsProvider);
-                    final activeDesigs = (desigsAsync.value ?? []).where((d) => d.status.toLowerCase() == 'active').toList();
-                    final options = activeDesigs.map((d) => d.designationName).toList();
-                    if (_designationCtrl.text.isNotEmpty && !options.contains(_designationCtrl.text)) {
-                      options.insert(0, _designationCtrl.text);
-                    }
+            final deptDropdown = Consumer(
+              builder: (context, ref, child) {
+                final deptsAsync = ref.watch(adminDepartmentsProvider);
+                final activeDepts = (deptsAsync.value ?? []).where((d) => d.status.toLowerCase() == 'active').toList();
+                final options = activeDepts.map((d) => d.name).toList();
+                if (_departmentCtrl.text.isNotEmpty && !options.contains(_departmentCtrl.text)) {
+                  options.insert(0, _departmentCtrl.text);
+                }
 
-                    if (options.isEmpty) {
-                      return TextFormField(
-                        controller: _designationCtrl,
-                        decoration: _inputStyle('Designation (No active designations created yet)', Icons.work_outline_rounded),
-                        style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
-                      );
-                    }
+                if (options.isEmpty) {
+                  return TextFormField(
+                    controller: _departmentCtrl,
+                    decoration: _cleanInputDecoration(Icons.domain_outlined, hintText: 'Enter department name'),
+                    style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
+                    validator: (val) => (val == null || val.trim().isEmpty) ? 'Department selection is required' : null,
+                  );
+                }
 
-                    return DropdownButtonFormField<String>(
-                      value: options.contains(_designationCtrl.text) ? _designationCtrl.text : null,
-                      decoration: _inputStyle('Designation (optional)', Icons.work_outline_rounded),
-                      style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFF1B1B24)),
-                      items: [
-                        const DropdownMenuItem<String>(value: null, child: Text('-- None / Unassigned --', style: TextStyle(fontFamily: 'Inter'))),
-                        ...options.map((d) => DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontFamily: 'Inter')))),
-                      ],
-                      onChanged: (val) {
-                        setState(() => _designationCtrl.text = val ?? '');
-                      },
-                    );
+                return DropdownButtonFormField<String>(
+                  value: options.contains(_departmentCtrl.text) ? _departmentCtrl.text : null,
+                  decoration: _cleanInputDecoration(Icons.domain_outlined, hintText: 'Select Department'),
+                  style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFF1B1B24)),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
+                  items: [
+                    const DropdownMenuItem<String>(value: null, child: Text('Select Department', style: TextStyle(fontFamily: 'Inter'))),
+                    ...options.map((d) => DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontFamily: 'Inter')))),
+                  ],
+                  validator: (val) => (val == null || val.trim().isEmpty) ? 'Department selection is required' : null,
+                  onChanged: (val) {
+                    setState(() => _departmentCtrl.text = val ?? '');
                   },
-                ),
-                const SizedBox(height: 16),
+                );
+              },
+            );
 
-                // Department dropdown
-                Consumer(
-                  builder: (context, ref, child) {
-                    final deptsAsync = ref.watch(adminDepartmentsProvider);
-                    final activeDepts = (deptsAsync.value ?? []).where((d) => d.status.toLowerCase() == 'active').toList();
-                    final options = activeDepts.map((d) => d.name).toList();
-                    if (_departmentCtrl.text.isNotEmpty && !options.contains(_departmentCtrl.text)) {
-                      options.insert(0, _departmentCtrl.text);
-                    }
+            final desigDropdown = Consumer(
+              builder: (context, ref, child) {
+                final desigsAsync = ref.watch(adminDesignationsProvider);
+                final activeDesigs = (desigsAsync.value ?? []).where((d) => d.status.toLowerCase() == 'active').toList();
+                final options = activeDesigs.map((d) => d.designationName).toList();
+                if (_designationCtrl.text.isNotEmpty && !options.contains(_designationCtrl.text)) {
+                  options.insert(0, _designationCtrl.text);
+                }
 
-                    if (options.isEmpty) {
-                      return TextFormField(
-                        controller: _departmentCtrl,
-                        decoration: _inputStyle('Department (No active departments created yet)', Icons.domain_outlined),
-                        style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
-                      );
-                    }
+                if (options.isEmpty) {
+                  return TextFormField(
+                    controller: _designationCtrl,
+                    decoration: _cleanInputDecoration(Icons.work_outline_rounded, hintText: 'Enter designation name'),
+                    style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
+                    validator: (val) => (val == null || val.trim().isEmpty) ? 'Designation selection is required' : null,
+                  );
+                }
 
-                    return DropdownButtonFormField<String>(
-                      value: options.contains(_departmentCtrl.text) ? _departmentCtrl.text : null,
-                      decoration: _inputStyle('Department (optional)', Icons.domain_outlined),
-                      style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFF1B1B24)),
-                      items: [
-                        const DropdownMenuItem<String>(value: null, child: Text('-- None / Unassigned --', style: TextStyle(fontFamily: 'Inter'))),
-                        ...options.map((d) => DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontFamily: 'Inter')))),
-                      ],
-                      onChanged: (val) {
-                        setState(() => _departmentCtrl.text = val ?? '');
-                      },
-                    );
+                return DropdownButtonFormField<String>(
+                  value: options.contains(_designationCtrl.text) ? _designationCtrl.text : null,
+                  decoration: _cleanInputDecoration(Icons.work_outline_rounded, hintText: 'Select Designation'),
+                  style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFF1B1B24)),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
+                  items: [
+                    const DropdownMenuItem<String>(value: null, child: Text('Select Designation', style: TextStyle(fontFamily: 'Inter'))),
+                    ...options.map((d) => DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontFamily: 'Inter')))),
+                  ],
+                  validator: (val) => (val == null || val.trim().isEmpty) ? 'Designation selection is required' : null,
+                  onChanged: (val) {
+                    setState(() => _designationCtrl.text = val ?? '');
                   },
-                ),
-                const SizedBox(height: 16),
+                );
+              },
+            );
 
-                // Branch dropdown
-                if (!isEdit && FeatureFlags.enableBranchManagement) ...[
-                  Consumer(
+            final branchDropdown = (!isEdit && FeatureFlags.enableBranchManagement)
+                ? Consumer(
                     builder: (context, ref, child) {
                       final branchesAsync = ref.watch(adminBranchesProvider);
                       final branches = branchesAsync.value ?? [];
-                      
+
                       return DropdownButtonFormField<String>(
                         value: _selectedBranchId,
-                        decoration: _inputStyle('Assign Branch *', Icons.location_city_rounded),
+                        decoration: _cleanInputDecoration(Icons.location_city_rounded, hintText: 'Select Branch'),
                         style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFF1B1B24)),
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
                         items: [
                           if (_selectedBranchId == null)
-                            const DropdownMenuItem<String>(value: null, child: Text('-- Select Branch --', style: TextStyle(fontFamily: 'Inter'))),
+                            const DropdownMenuItem<String>(value: null, child: Text('Select Branch', style: TextStyle(fontFamily: 'Inter'))),
                           ...branches.map((b) {
                             return DropdownMenuItem(value: b.branchId, child: Text(b.branchName, style: const TextStyle(fontFamily: 'Inter')));
                           }),
@@ -1085,53 +1105,104 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                         validator: (val) => (val == null && FeatureFlags.enableBranchManagement) ? 'Branch assignment is required' : null,
                       );
                     },
-                  ),
-                  const SizedBox(height: 16),
-                ],
+                  )
+                : const SizedBox();
 
-                // Role dropdown
-                DropdownButtonFormField<String>(
-                  value: _dbRoles.toSet().contains(_selectedRole)
-                      ? _selectedRole
-                      : (_dbRoles.isNotEmpty ? _dbRoles.first : UserRoles.employee),
-                  decoration: _inputStyle('Role', Icons.badge_outlined),
-                  style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFF1B1B24)),
-                  items: _dbRoles.toSet()
-                      .map((r) => DropdownMenuItem(value: r, child: Text(UserModel.denormalizeRole(r), style: const TextStyle(fontFamily: 'Inter'))))
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _selectedRole = val);
-                  },
-                ),
-                const SizedBox(height: 28),
-
-                // Save button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isSaving ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+            return Form(
+              key: _formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Handle bar
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE2E8F0),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
                     ),
-                    child: _isSaving
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    const SizedBox(height: 16),
+                    Text(
+                      isEdit ? 'Edit Employee Details' : (isHr ? 'Request Employee Addition' : 'Add Employee'),
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B), fontFamily: 'Inter'),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isEdit
+                          ? 'Update employee name and organizational details.'
+                          : (isHr
+                              ? 'Submit an employee request to the company administrator for approval.'
+                              : 'Enter employee details and assign organizational information.'),
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Inter'),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // SECTION 1: EMPLOYEE INFORMATION
+                    _buildSectionHeader('EMPLOYEE INFORMATION'),
+                    !isEdit
+                        ? _buildRowOrStack(
+                            _buildFieldWrapper('Full Name', true, nameField),
+                            _buildFieldWrapper('Employee ID', true, empIdField),
+                            isDesktop,
                           )
-                        : Text(
-                            isEdit ? 'Save Changes' : (isHr ? 'Submit Request' : 'Add Employee'),
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Inter'),
-                          ),
-                  ),
+                        : _buildFieldWrapper('Full Name', true, nameField),
+                    const SizedBox(height: 14),
+                    !isEdit
+                        ? _buildRowOrStack(
+                            _buildFieldWrapper('Personal Email', true, emailField),
+                            _buildFieldWrapper('Phone Number', false, phoneField),
+                            isDesktop,
+                          )
+                        : _buildFieldWrapper('Phone Number', false, phoneField),
+
+                    // SECTION 2: ORGANIZATIONAL DETAILS
+                    const SizedBox(height: 8),
+                    _buildSectionHeader('ORGANIZATIONAL DETAILS'),
+                    _buildRowOrStack(
+                      _buildFieldWrapper('Department', true, deptDropdown),
+                      _buildFieldWrapper('Designation', true, desigDropdown),
+                      isDesktop,
+                    ),
+                    if (!isEdit && FeatureFlags.enableBranchManagement) ...[
+                      const SizedBox(height: 14),
+                      _buildFieldWrapper('Assign Branch', true, branchDropdown),
+                    ],
+                    const SizedBox(height: 24),
+
+                    // Submit button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _isSaving ? null : _save,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: _isSaving
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : Text(
+                                isEdit ? 'Save Changes' : (isHr ? 'Submit Request' : 'Create Employee'),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Inter'),
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1224,6 +1295,7 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
 
               final credentials = await widget.ref.read(adminEmployeesProvider.notifier).createEmployee(
                 name: _nameCtrl.text.trim(),
+                employeeId: _empIdCtrl.text.trim(),
                 personalEmail: _personalEmailCtrl.text.trim(),
                 phoneNumber: _phoneCtrl.text.trim(),
                 departmentId: null,

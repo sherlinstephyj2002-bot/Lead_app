@@ -7,6 +7,7 @@ import '../../../shared/models/task_model.dart';
 import 'task_detail_screen.dart';
 import '../../../constants/user_roles.dart';
 import '../../../features/company_admin/providers/company_admin_providers.dart';
+import '../../../shared/utils/app_notification.dart';
 
 class TaskListScreen extends ConsumerStatefulWidget {
   const TaskListScreen({super.key});
@@ -564,9 +565,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                             );
                             if (dialogContext.mounted) {
                               Navigator.pop(dialogContext);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Task created successfully!')),
-                              );
+                              AppNotification.showSuccess(context, 'Task created successfully!');
                             }
                           } catch (e) {
                             if (dialogContext.mounted) {

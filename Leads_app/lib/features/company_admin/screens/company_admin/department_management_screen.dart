@@ -8,6 +8,7 @@ import 'package:worktrack/features/company_admin/providers/company_admin_provide
 import 'package:worktrack/features/company_admin/models/branch_model.dart';
 import 'package:worktrack/constants/feature_flags.dart';
 import 'package:worktrack/shared/services/app_error_handler.dart';
+import 'package:worktrack/shared/utils/app_notification.dart';
 
 class DepartmentManagementScreen extends ConsumerStatefulWidget {
   const DepartmentManagementScreen({super.key});
@@ -793,9 +794,7 @@ class _DepartmentManagementScreenState extends ConsumerState<DepartmentManagemen
                               if (context.mounted) {
                                 if (success) {
                                   Navigator.pop(ctx);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Department saved successfully.'), backgroundColor: Colors.green),
-                                  );
+                                  AppNotification.showSuccess(context, 'Department saved successfully.');
                                 } else {
                                   setModalState(() { isSubmitting = false; });
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -860,9 +859,7 @@ class _DepartmentManagementScreenState extends ConsumerState<DepartmentManagemen
                         await ref.read(adminDepartmentsProvider.notifier).deleteDepartment(id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Department disabled successfully.'), backgroundColor: Colors.green),
-                          );
+                          AppNotification.showSuccess(context, 'Department disabled successfully.');
                         }
                       } catch (e, stack) {
                         if (context.mounted) {
@@ -918,9 +915,7 @@ class _DepartmentManagementScreenState extends ConsumerState<DepartmentManagemen
                         await ref.read(adminDepartmentsProvider.notifier).restoreDepartment(id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Department restored successfully.'), backgroundColor: Colors.green),
-                          );
+                          AppNotification.showSuccess(context, 'Department restored successfully.');
                         }
                       } catch (e, stack) {
                         if (context.mounted) {
@@ -1006,9 +1001,7 @@ class _DepartmentManagementScreenState extends ConsumerState<DepartmentManagemen
                           await ref.read(adminDepartmentsProvider.notifier).permanentlyDeleteDepartment(dept.departmentId);
                           if (context.mounted) {
                             Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Department deleted successfully.'), backgroundColor: Colors.green),
-                            );
+                            AppNotification.showSuccess(context, 'Department deleted successfully.');
                           }
                         } catch (e, stack) {
                           if (context.mounted) {

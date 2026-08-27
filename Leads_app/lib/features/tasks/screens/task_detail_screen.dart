@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../../shared/models/task_model.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../constants/user_roles.dart';
+import '../../../shared/utils/app_notification.dart';
 
 class TaskDetailScreen extends ConsumerWidget {
   final TaskModel task;
@@ -308,10 +309,8 @@ class TaskDetailScreen extends ConsumerWidget {
                         .read(tasksProvider.notifier)
                         .updateTaskStatus(task.taskId, 'In Progress');
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Task started!')),
-                      );
                       Navigator.pop(context);
+                      AppNotification.showSuccess(context, 'Task started!');
                     }
                   },
                   icon: const Icon(Icons.timelapse_rounded),
@@ -327,10 +326,8 @@ class TaskDetailScreen extends ConsumerWidget {
                         .read(tasksProvider.notifier)
                         .updateTaskStatus(task.taskId, 'Completed');
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Task completed!')),
-                      );
                       Navigator.pop(context);
+                      AppNotification.showSuccess(context, 'Task completed!');
                     }
                   },
                   icon: const Icon(Icons.check_circle_outline_rounded),
@@ -364,9 +361,7 @@ class TaskDetailScreen extends ConsumerWidget {
                 if (context.mounted) {
                   Navigator.pop(ctx);
                   Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Task deleted successfully!')),
-                  );
+                  AppNotification.showSuccess(context, 'Task deleted successfully!');
                 }
               } catch (e) {
                 if (context.mounted) {

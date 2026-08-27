@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:image_picker/image_picker.dart';
@@ -13,6 +14,7 @@ import '../../company_admin/models/shift_model.dart';
 import '../../company_admin/models/holiday_model.dart';
 import '../../company_admin/providers/company_admin_providers.dart';
 import '../../../constants/feature_flags.dart';
+import '../../../shared/utils/shift_duration_calculator.dart';
 
 class OnboardingWizardScreen extends ConsumerStatefulWidget {
   const OnboardingWizardScreen({super.key});
@@ -33,6 +35,7 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
       if (FeatureFlags.enableBranchManagement) 1, // Branches
       2, // Departments
       3, // Designations
+      7, // Roles & Permissions
       4, // Shifts
       5, // Holidays
       6, // Review
@@ -109,6 +112,8 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
         return Icons.business_center_rounded;
       case 3:
         return Icons.badge_outlined;
+      case 7:
+        return Icons.security_rounded;
       case 4:
         return Icons.schedule_rounded;
       case 5:
@@ -128,6 +133,8 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
         return 'Configure Departments';
       case 3:
         return 'Configure Designations';
+      case 7:
+        return 'Roles & Permissions';
       case 4:
         return 'Work Shifts';
       case 5:
@@ -437,6 +444,8 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
         return _buildStep3Departments(company);
       case 3:
         return _buildStep4Designations(company);
+      case 7:
+        return _buildRolesAndPermissionsStep(company);
       case 4:
         return _buildStep5Shifts(company);
       case 5:
@@ -445,6 +454,444 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
         return _buildStep7Review(company);
       default:
         return _buildStep1Profile();
+    }
+  }
+
+  // ==========================================
+  // ROLES & PERMISSIONS STEP (STEP 7)
+  // ==========================================
+  Widget _buildRolesAndPermissionsStep(CompanyModel company) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('roles')
+          .where('companyId', isEqualTo: company.companyId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? [];
+        final customRoles = docs.map((d) {
+          final data = d.data();
+          return {
+            'roleId': d.id,
+            'roleName': data['roleName'] ?? '',
+            'description': data['description'] ?? '',
+            'createdAt': data['createdAt'],
+          };
+        }).toList();
+
+        return Card(
+          elevation: 0,
+          color: isDark ? Theme.of(context).cardColor : Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Roles & Permissions Setup', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : const Color(0xFF0F172A), fontFamily: 'Outfit')),
+                          const SizedBox(height: 4),
+                          Text('Create custom operational roles based on your company\'s actual organizational structure.', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit')),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () => _showWizardRoleDialog(company.companyId),
+                      icon: const Icon(Icons.add_rounded, size: 16),
+                      label: const Text('Add Custom Role', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF5B4CF0),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                if (customRoles.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF5B4CF0).withValues(alpha: isDark ? 0.15 : 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF5B4CF0).withValues(alpha: 0.2)),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.security_rounded, size: 36, color: Color(0xFF5B4CF0)),
+                        const SizedBox(height: 10),
+                        Text(
+                          'No custom roles created yet',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF0F172A), fontFamily: 'Outfit'),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Create roles like "Tech Lead", "Team Lead", "Senior Analyst", "Sales Executive", etc. and assign appropriate permissions.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit'),
+                        ),
+                        const SizedBox(height: 14),
+                        OutlinedButton.icon(
+                          onPressed: () => _showWizardRoleDialog(company.companyId),
+                          icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF5B4CF0)),
+                          label: const Text('Create First Role', style: TextStyle(color: Color(0xFF5B4CF0), fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0xFF5B4CF0)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: customRoles.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final r = customRoles[index];
+                      final roleId = r['roleId'] as String;
+                      final roleName = r['roleName'] as String;
+                      final desc = r['description'] as String;
+
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF5B4CF0).withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.verified_user_rounded, color: Color(0xFF5B4CF0), size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(roleName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF0F172A), fontFamily: 'Outfit')),
+                                  if (desc.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(desc, style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit')),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.edit_outlined, color: Color(0xFFF59E0B), size: 18),
+                                  onPressed: () => _showWizardRoleDialog(company.companyId, existingRole: r),
+                                  tooltip: 'Edit Role',
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 18),
+                                  onPressed: () => _deleteWizardRoleConfirm(roleId, roleName),
+                                  tooltip: 'Delete Role',
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showWizardRoleDialog(String companyId, {Map<String, dynamic>? existingRole}) async {
+    final isEdit = existingRole != null;
+    final roleId = isEdit ? existingRole['roleId'] as String : const Uuid().v4();
+    final nameCtrl = TextEditingController(text: existingRole != null ? existingRole['roleName'] : '');
+    final descCtrl = TextEditingController(text: existingRole != null ? existingRole['description'] : '');
+    final formKey = GlobalKey<FormState>();
+
+    // Modules permission map
+    final Map<String, List<Map<String, String>>> modules = {
+      'EMPLOYEES': [
+        {'id': 'employee_view', 'name': 'View Employees'},
+        {'id': 'employee_create', 'name': 'Create Employees'},
+        {'id': 'employee_edit', 'name': 'Edit Employees'},
+        {'id': 'employee_delete', 'name': 'Delete Employees'},
+      ],
+      'LEADS': [
+        {'id': 'lead_view', 'name': 'View Leads'},
+        {'id': 'lead_create', 'name': 'Create Leads'},
+        {'id': 'lead_edit', 'name': 'Edit Leads'},
+        {'id': 'lead_delete', 'name': 'Delete Leads'},
+        {'id': 'lead_convert_order', 'name': 'Convert Leads'},
+      ],
+      'ORDERS': [
+        {'id': 'order_view', 'name': 'View Orders'},
+        {'id': 'order_create', 'name': 'Create Orders'},
+        {'id': 'order_edit', 'name': 'Edit Orders'},
+        {'id': 'order_delete', 'name': 'Delete Orders'},
+        {'id': 'order_close', 'name': 'Close Orders'},
+        {'id': 'order_cancel', 'name': 'Cancel Orders'},
+      ],
+      'ATTENDANCE': [
+        {'id': 'attendance_view', 'name': 'View Attendance'},
+        {'id': 'attendance_approve', 'name': 'Approve Attendance'},
+        {'id': 'attendance_correct', 'name': 'Correct Attendance'},
+      ],
+      'PAYROLL': [
+        {'id': 'payroll_view', 'name': 'View Payroll'},
+        {'id': 'payroll_generate', 'name': 'Generate Payroll'},
+        {'id': 'payroll_approve', 'name': 'Approve Payroll'},
+        {'id': 'payroll_manage', 'name': 'Manage Payroll'},
+      ],
+      'REPORTS': [
+        {'id': 'reports_view', 'name': 'View Reports'},
+        {'id': 'reports_export', 'name': 'Export Reports'},
+      ],
+      'COMPANY ADMINISTRATION': [
+        {'id': 'department_create', 'name': 'Manage Departments'},
+        {'id': 'designation_create', 'name': 'Manage Designations'},
+        {'id': 'settings_manage', 'name': 'Settings Administration'},
+      ],
+      'TASKS': [
+        {'id': 'task_view', 'name': 'View Tasks'},
+        {'id': 'task_create', 'name': 'Create Tasks'},
+        {'id': 'task_edit', 'name': 'Edit Tasks'},
+        {'id': 'task_delete', 'name': 'Delete Tasks'},
+        {'id': 'task_assign', 'name': 'Assign Tasks'},
+      ],
+      'FOLLOW-UPS': [
+        {'id': 'followup_view', 'name': 'View Follow-ups'},
+        {'id': 'followup_create', 'name': 'Create Follow-ups'},
+        {'id': 'followup_edit', 'name': 'Edit Follow-ups'},
+        {'id': 'followup_complete', 'name': 'Complete Follow-ups'},
+      ],
+    };
+
+    List<String> selectedPermissions = [];
+
+    if (isEdit) {
+      final permsSnap = await FirebaseFirestore.instance
+          .collection('role_permissions')
+          .where('roleId', isEqualTo: roleId)
+          .get();
+      selectedPermissions = permsSnap.docs.map((d) => d.data()['permissionId'] as String).toList();
+    } else {
+      // Default basic view permissions for new role
+      selectedPermissions = ['employee_view', 'attendance_view', 'leave_apply'];
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text(isEdit ? 'Edit Custom Role' : 'Create Custom Role', style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+            content: SizedBox(
+              width: 550,
+              child: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(labelText: 'Role Name *', hintText: 'e.g. Tech Lead, Senior Analyst, Sales Manager'),
+                        validator: (v) => v == null || v.trim().isEmpty ? 'Role Name is required' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: descCtrl,
+                        decoration: const InputDecoration(labelText: 'Role Description', hintText: 'Describe duties & responsibilities'),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('Permissions by Module:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Outfit', color: Color(0xFF5B4CF0))),
+                      const SizedBox(height: 8),
+                      ...modules.keys.map((modName) {
+                        final modPerms = modules[modName]!;
+                        final modIds = modPerms.map((p) => p['id']!).toList();
+                        final allSelected = modIds.every((id) => selectedPermissions.contains(id));
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(modName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Color(0xFF0F172A), fontFamily: 'Outfit')),
+                                  TextButton(
+                                    onPressed: () {
+                                      setDialogState(() {
+                                        if (allSelected) {
+                                          selectedPermissions.removeWhere((id) => modIds.contains(id));
+                                        } else {
+                                          for (final id in modIds) {
+                                            if (!selectedPermissions.contains(id)) {
+                                              selectedPermissions.add(id);
+                                            }
+                                          }
+                                        }
+                                      });
+                                    },
+                                    child: Text(allSelected ? 'Clear' : 'Select All', style: const TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: modPerms.map((p) {
+                                  final pId = p['id']!;
+                                  final isChecked = selectedPermissions.contains(pId);
+                                  return FilterChip(
+                                    label: Text(p['name']!, style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: isChecked ? Colors.white : const Color(0xFF1E293B))),
+                                    selected: isChecked,
+                                    selectedColor: const Color(0xFF5B4CF0),
+                                    backgroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    onSelected: (val) {
+                                      setDialogState(() {
+                                        if (val) {
+                                          selectedPermissions.add(pId);
+                                        } else {
+                                          selectedPermissions.remove(pId);
+                                        }
+                                      });
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(fontFamily: 'Outfit'))),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                onPressed: () async {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.pop(ctx);
+                    await _saveWizardRole(companyId, roleId, nameCtrl.text.trim(), descCtrl.text.trim(), selectedPermissions);
+                  }
+                },
+                child: const Text('Save Role', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _saveWizardRole(String companyId, String roleId, String name, String description, List<String> permissions) async {
+    try {
+      final db = FirebaseFirestore.instance;
+      final batch = db.batch();
+
+      batch.set(db.collection('roles').doc(roleId), {
+        'roleId': roleId,
+        'companyId': companyId,
+        'roleName': name,
+        'description': description,
+        'isSystemRole': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Clear existing mappings
+      final existingPerms = await db.collection('role_permissions').where('roleId', isEqualTo: roleId).get();
+      for (final doc in existingPerms.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // Add new mappings
+      for (final permId in permissions) {
+        final docId = '${roleId}_$permId';
+        batch.set(db.collection('role_permissions').doc(docId), {
+          'roleId': roleId,
+          'permissionId': permId,
+        });
+      }
+
+      await batch.commit();
+      _showSnackBar('Custom role "$name" saved successfully.');
+    } catch (e) {
+      _showSnackBar('Failed to save custom role: $e', isError: true);
+    }
+  }
+
+  Future<void> _deleteWizardRoleConfirm(String roleId, String roleName) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Custom Role', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+        content: Text('Delete role "$roleName"?', style: const TextStyle(fontFamily: 'Outfit')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(fontFamily: 'Outfit'))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final db = FirebaseFirestore.instance;
+      final batch = db.batch();
+      batch.delete(db.collection('roles').doc(roleId));
+
+      final mappings = await db.collection('role_permissions').where('roleId', isEqualTo: roleId).get();
+      for (final doc in mappings.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+      _showSnackBar('Custom role deleted.');
     }
   }
 
@@ -1648,13 +2095,38 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
     final isEdit = shift != null;
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController(text: shift?.shiftName);
-    final startCtrl = TextEditingController(text: shift?.startTime ?? '09:00');
-    final endCtrl = TextEditingController(text: shift?.endTime ?? '18:00');
+    final startCtrl = TextEditingController(text: shift?.startTime ?? '09:00 AM');
+    final endCtrl = TextEditingController(text: shift?.endTime ?? '06:00 PM');
     final breakCtrl = TextEditingController(text: shift != null ? '${shift.breakDuration}' : '60');
     final hoursCtrl = TextEditingController(text: shift != null ? '${shift.workingHours}' : '8.0');
     final lateCtrl = TextEditingController(text: shift != null ? '${shift.lateToleranceMinutes}' : '15');
     final earlyCtrl = TextEditingController(text: shift != null ? '${shift.earlyExitToleranceMinutes}' : '15');
     bool overtimeEligible = shift?.overtimeEligible ?? false;
+
+    ShiftDurationResult calcResult = ShiftDurationCalculator.calculateShiftDuration(
+      startTimeStr: startCtrl.text.trim(),
+      endTimeStr: endCtrl.text.trim(),
+      breakDurationMinutes: int.tryParse(breakCtrl.text.trim()) ?? 0,
+    );
+
+    if (calcResult.isValid && shift == null) {
+      hoursCtrl.text = calcResult.workingHours.toStringAsFixed(2).replaceAll(RegExp(r'\.00$'), '');
+    }
+
+    void recalculate(void Function(void Function()) setDialogState) {
+      final bMins = int.tryParse(breakCtrl.text.trim()) ?? 0;
+      final res = ShiftDurationCalculator.calculateShiftDuration(
+        startTimeStr: startCtrl.text.trim(),
+        endTimeStr: endCtrl.text.trim(),
+        breakDurationMinutes: bMins,
+      );
+      setDialogState(() {
+        calcResult = res;
+        if (res.isValid) {
+          hoursCtrl.text = res.workingHours.toStringAsFixed(2).replaceAll(RegExp(r'\.00$'), '');
+        }
+      });
+    }
 
     showDialog(
       context: context,
@@ -1662,6 +2134,8 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (dialogCtx, setDialogState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text(isEdit ? 'Edit Work Shift' : 'Add Work Shift', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -1684,16 +2158,64 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                             Expanded(
                               child: TextFormField(
                                 controller: startCtrl,
-                                decoration: const InputDecoration(labelText: 'Start Time (HH:mm) *'),
-                                validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                                decoration: InputDecoration(
+                                  labelText: 'Start Time *',
+                                  hintText: '09:00 AM',
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.access_time_rounded, size: 20),
+                                    onPressed: () async {
+                                      final initialMins = ShiftDurationCalculator.parseTimeToMinutes(startCtrl.text.trim()) ?? 540;
+                                      final picked = await showTimePicker(
+                                        context: context,
+                                        initialTime: TimeOfDay(hour: initialMins ~/ 60, minute: initialMins % 60),
+                                      );
+                                      if (picked != null) {
+                                        startCtrl.text = ShiftDurationCalculator.formatMinutesTo12Hour(
+                                          ShiftDurationCalculator.timeOfDayToMinutes(picked),
+                                        );
+                                        recalculate(setDialogState);
+                                      }
+                                    },
+                                  ),
+                                ),
+                                onChanged: (_) => recalculate(setDialogState),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) return 'Required';
+                                  if (ShiftDurationCalculator.parseTimeToMinutes(v.trim()) == null) return 'Invalid format';
+                                  return null;
+                                },
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: TextFormField(
                                 controller: endCtrl,
-                                decoration: const InputDecoration(labelText: 'End Time (HH:mm) *'),
-                                validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                                decoration: InputDecoration(
+                                  labelText: 'End Time *',
+                                  hintText: '06:00 PM',
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.access_time_rounded, size: 20),
+                                    onPressed: () async {
+                                      final initialMins = ShiftDurationCalculator.parseTimeToMinutes(endCtrl.text.trim()) ?? 1080;
+                                      final picked = await showTimePicker(
+                                        context: context,
+                                        initialTime: TimeOfDay(hour: initialMins ~/ 60, minute: initialMins % 60),
+                                      );
+                                      if (picked != null) {
+                                        endCtrl.text = ShiftDurationCalculator.formatMinutesTo12Hour(
+                                          ShiftDurationCalculator.timeOfDayToMinutes(picked),
+                                        );
+                                        recalculate(setDialogState);
+                                      }
+                                    },
+                                  ),
+                                ),
+                                onChanged: (_) => recalculate(setDialogState),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) return 'Required';
+                                  if (ShiftDurationCalculator.parseTimeToMinutes(v.trim()) == null) return 'Invalid format';
+                                  return null;
+                                },
                               ),
                             ),
                           ],
@@ -1706,6 +2228,7 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                                 controller: breakCtrl,
                                 decoration: const InputDecoration(labelText: 'Break Duration (mins) *'),
                                 keyboardType: TextInputType.number,
+                                onChanged: (_) => recalculate(setDialogState),
                                 validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                               ),
                             ),
@@ -1713,14 +2236,53 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                             Expanded(
                               child: TextFormField(
                                 controller: hoursCtrl,
-                                decoration: const InputDecoration(labelText: 'Working Hours (double) *'),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                readOnly: true,
+                                decoration: const InputDecoration(labelText: 'Working Hours (Auto) *'),
+                                style: const TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 8),
+
+                        // Shift Summary Card
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: calcResult.isValid
+                                ? (isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEEF2FF))
+                                : (isDark ? const Color(0xFF450A0A) : const Color(0xFFFEF2F2)),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: calcResult.isValid
+                                  ? (isDark ? const Color(0xFF4338CA) : const Color(0xFFC7D2FE))
+                                  : (isDark ? const Color(0xFF991B1B) : const Color(0xFFFCA5A5)),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Total Shift', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
+                                  const SizedBox(height: 2),
+                                  Text(calcResult.formattedTotalDuration, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Text('Net Working Hours', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 2),
+                                  Text(calcResult.formattedWorkingHours, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
                         Row(
                           children: [
                             Expanded(
@@ -1761,6 +2323,11 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                 ElevatedButton(
                   onPressed: () async {
                     if (formKey.currentState!.validate()) {
+                      if (!calcResult.isValid) {
+                        _showSnackBar(calcResult.errorMessage ?? 'Invalid shift duration', isError: true);
+                        return;
+                      }
+
                       final newShift = ShiftModel(
                         shiftId: shift?.shiftId ?? const Uuid().v4(),
                         companyId: companyId,
@@ -1769,7 +2336,7 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                         startTime: startCtrl.text.trim(),
                         endTime: endCtrl.text.trim(),
                         breakDurationMinutes: int.parse(breakCtrl.text),
-                        workingHours: double.parse(hoursCtrl.text),
+                        workingHours: calcResult.workingHours,
                         gracePeriodMinutes: int.parse(lateCtrl.text.isEmpty ? '0' : lateCtrl.text),
                         halfDayThresholdHours: 4.0,
                         overtimeAllowed: overtimeEligible,

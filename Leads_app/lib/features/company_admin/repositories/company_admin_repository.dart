@@ -406,15 +406,12 @@ class CompanyAdminRepository {
 
     if (query.docs.isEmpty) {
       final standardEarnings = [
-        {'name': 'Basic', 'type': 'Earning', 'calculationType': 'Flat', 'value': 15000.0},
+        {'name': 'Basic Pay', 'type': 'Earning', 'calculationType': 'Flat', 'value': 15000.0},
         {'name': 'HRA', 'type': 'Earning', 'calculationType': 'Percentage', 'value': 40.0},
-        {'name': 'DA', 'type': 'Earning', 'calculationType': 'Flat', 'value': 0.0},
-        {'name': 'Medical', 'type': 'Earning', 'calculationType': 'Flat', 'value': 1250.0},
-        {'name': 'Food', 'type': 'Earning', 'calculationType': 'Flat', 'value': 0.0},
-        {'name': 'Travel', 'type': 'Earning', 'calculationType': 'Flat', 'value': 1600.0},
-        {'name': 'Bonus', 'type': 'Earning', 'calculationType': 'Flat', 'value': 0.0},
-        {'name': 'Incentive', 'type': 'Earning', 'calculationType': 'Flat', 'value': 0.0},
-        {'name': 'Other Earnings', 'type': 'Earning', 'calculationType': 'Flat', 'value': 0.0},
+        {'name': 'Travel & Food Allowance', 'type': 'Earning', 'calculationType': 'Percentage', 'value': 10.0},
+        {'name': 'Medical Allowance', 'type': 'Earning', 'calculationType': 'Percentage', 'value': 5.0},
+        {'name': 'Other Earnings & Bonus', 'type': 'Earning', 'calculationType': 'Percentage', 'value': 10.0},
+        {'name': 'Incentive', 'type': 'Earning', 'calculationType': 'Percentage', 'value': 0.0},
       ];
 
       final standardDeductions = [

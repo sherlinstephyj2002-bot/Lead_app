@@ -6,6 +6,7 @@ import '../../../shared/providers/providers.dart';
 import '../../../shared/models/lead_model.dart';
 import '../../../shared/models/user_model.dart';
 import '../../../shared/utils/app_validators.dart';
+import '../../../shared/utils/app_notification.dart';
 
 class LeadFormScreen extends ConsumerStatefulWidget {
   final LeadModel? leadToEdit;
@@ -85,6 +86,7 @@ class _LeadFormScreenState extends ConsumerState<LeadFormScreen> {
         await notifier.updateLead(updatedLead);
         if (mounted) {
           context.pop();
+          AppNotification.showSuccess(context, 'Lead updated successfully');
         }
       } else {
         // Create new lead
@@ -102,6 +104,7 @@ class _LeadFormScreenState extends ConsumerState<LeadFormScreen> {
         );
         if (mounted) {
           context.pop();
+          AppNotification.showSuccess(context, 'Lead saved successfully');
         }
       }
     }

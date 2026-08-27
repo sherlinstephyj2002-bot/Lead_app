@@ -7,6 +7,7 @@ import 'package:worktrack/features/company_admin/models/branch_model.dart';
 import 'package:worktrack/features/company_admin/providers/company_admin_providers.dart';
 import 'package:worktrack/features/company_admin/widgets/company_admin/searchable_paginated_table.dart';
 import 'package:worktrack/shared/utils/app_validators.dart';
+import 'package:worktrack/shared/utils/app_notification.dart';
 
 class BranchManagementScreen extends ConsumerStatefulWidget {
   const BranchManagementScreen({super.key});
@@ -361,9 +362,7 @@ class _BranchManagementScreenState extends ConsumerState<BranchManagementScreen>
                                   );
                                 } else {
                                   Navigator.pop(ctx);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Branch saved successfully.'), backgroundColor: Colors.green),
-                                  );
+                                  AppNotification.showSuccess(context, 'Branch saved successfully.');
                                 }
                               }
                             } catch (e) {
@@ -453,9 +452,7 @@ class _BranchManagementScreenState extends ConsumerState<BranchManagementScreen>
                         await ref.read(adminBranchesProvider.notifier).archiveBranch(id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Branch archived successfully.'), backgroundColor: Colors.green),
-                          );
+                          AppNotification.showSuccess(context, 'Branch archived successfully.');
                         }
                       } catch (e) {
                         if (context.mounted) {
@@ -497,9 +494,7 @@ class _BranchManagementScreenState extends ConsumerState<BranchManagementScreen>
                         await ref.read(adminBranchesProvider.notifier).restoreBranch(id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Branch restored successfully.'), backgroundColor: Colors.green),
-                          );
+                          AppNotification.showSuccess(context, 'Branch restored successfully.');
                         }
                       } catch (e) {
                         if (context.mounted) {

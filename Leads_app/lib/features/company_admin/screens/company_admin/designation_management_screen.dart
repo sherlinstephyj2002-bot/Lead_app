@@ -7,6 +7,7 @@ import 'package:worktrack/features/company_admin/models/designation_model.dart';
 import 'package:worktrack/features/company_admin/providers/company_admin_providers.dart';
 import 'package:worktrack/constants/feature_flags.dart';
 import 'package:worktrack/features/company_admin/widgets/company_admin/searchable_paginated_table.dart';
+import 'package:worktrack/shared/utils/app_notification.dart';
 
 class DesignationManagementScreen extends ConsumerStatefulWidget {
   const DesignationManagementScreen({super.key});
@@ -382,9 +383,7 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
                               if (context.mounted) {
                                 if (success) {
                                   Navigator.pop(ctx);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Designation saved successfully.'), backgroundColor: Colors.green),
-                                  );
+                                  AppNotification.showSuccess(context, 'Designation saved successfully.');
                                 } else {
                                   setModalState(() { isSubmitting = false; });
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -441,9 +440,7 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
                         await ref.read(adminDesignationsProvider.notifier).deleteDesignation(id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Designation disabled successfully.'), backgroundColor: Colors.green),
-                          );
+                          AppNotification.showSuccess(context, 'Designation disabled successfully.');
                         }
                       } catch (e) {
                         if (context.mounted) {
@@ -491,9 +488,7 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
                         await ref.read(adminDesignationsProvider.notifier).restoreDesignation(id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Designation restored successfully.'), backgroundColor: Colors.green),
-                          );
+                          AppNotification.showSuccess(context, 'Designation restored successfully.');
                         }
                       } catch (e) {
                         if (context.mounted) {
@@ -570,9 +565,7 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
                           await ref.read(adminDesignationsProvider.notifier).permanentlyDeleteDesignation(desig.designationId);
                           if (context.mounted) {
                             Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Designation deleted successfully.'), backgroundColor: Colors.green),
-                            );
+                            AppNotification.showSuccess(context, 'Designation deleted successfully.');
                           }
                         } catch (e) {
                           if (context.mounted) {

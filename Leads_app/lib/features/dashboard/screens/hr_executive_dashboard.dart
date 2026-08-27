@@ -234,7 +234,7 @@ class HRExecutiveDashboard extends ConsumerWidget {
                               color: const Color(0xFF10B981),
                               title: 'Monthly Payroll Preparation',
                               subtitle: 'Verify working days, overtime, LOP & submit payroll to HR Admin',
-                              onTap: () => context.push('/company-admin/payroll-processing'),
+                              onTap: () => context.push('/company-admin/monthly-payroll'),
                             ),
                           if (canPayroll && canReports) const Divider(height: 20),
                           if (canReports)

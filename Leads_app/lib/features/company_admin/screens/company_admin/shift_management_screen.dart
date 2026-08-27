@@ -4,6 +4,8 @@ import 'package:uuid/uuid.dart';
 import 'package:worktrack/shared/providers/providers.dart';
 import 'package:worktrack/features/company_admin/models/shift_model.dart';
 import 'package:worktrack/features/company_admin/providers/company_admin_providers.dart';
+import 'package:worktrack/shared/utils/app_notification.dart';
+import 'package:worktrack/shared/utils/shift_duration_calculator.dart';
 
 class ShiftManagementScreen extends ConsumerStatefulWidget {
   const ShiftManagementScreen({super.key});
@@ -380,7 +382,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                                 ),
                                 const SizedBox(height: 12),
                                 Text(
-                                  'Timing: ${shift.startTime} - ${shift.endTime} (${shift.workingHours} hrs)',
+                                  'Timing: ${shift.startTime} - ${shift.endTime} (${ShiftDurationCalculator.formatMinutesToHumanReadable((shift.workingHours * 60).round())})',
                                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white : const Color(0xFF1E293B)),
                                 ),
                                 const SizedBox(height: 4),
@@ -529,8 +531,8 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController(text: existingShift?.shiftName ?? '');
     final codeCtrl = TextEditingController(text: existingShift?.shiftCode ?? '');
-    final startCtrl = TextEditingController(text: existingShift?.startTime ?? '09:00');
-    final endCtrl = TextEditingController(text: existingShift?.endTime ?? '18:00');
+    final startCtrl = TextEditingController(text: existingShift?.startTime ?? '09:00 AM');
+    final endCtrl = TextEditingController(text: existingShift?.endTime ?? '06:00 PM');
     final breakCtrl = TextEditingController(text: existingShift?.breakDurationMinutes.toString() ?? '60');
     final graceCtrl = TextEditingController(text: existingShift?.gracePeriodMinutes.toString() ?? '15');
     final halfDayCtrl = TextEditingController(text: existingShift?.halfDayThresholdHours.toString() ?? '4.0');
@@ -545,6 +547,31 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
         ? List<String>.from(existingShift.weeklyOffDays) 
         : ['Sunday'];
 
+    ShiftDurationResult calcResult = ShiftDurationCalculator.calculateShiftDuration(
+      startTimeStr: startCtrl.text.trim(),
+      endTimeStr: endCtrl.text.trim(),
+      breakDurationMinutes: int.tryParse(breakCtrl.text.trim()) ?? 0,
+    );
+
+    if (calcResult.isValid && existingShift == null) {
+      hrsCtrl.text = calcResult.workingHours.toStringAsFixed(2).replaceAll(RegExp(r'\.00$'), '');
+    }
+
+    void recalculate(void Function(void Function()) setModalState) {
+      final bMins = int.tryParse(breakCtrl.text.trim()) ?? 0;
+      final res = ShiftDurationCalculator.calculateShiftDuration(
+        startTimeStr: startCtrl.text.trim(),
+        endTimeStr: endCtrl.text.trim(),
+        breakDurationMinutes: bMins,
+      );
+      setModalState(() {
+        calcResult = res;
+        if (res.isValid) {
+          hrsCtrl.text = res.workingHours.toStringAsFixed(2).replaceAll(RegExp(r'\.00$'), '');
+        }
+      });
+    }
+
     bool isSubmitting = false;
     showDialog(
       context: context,
@@ -552,6 +579,8 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text(existingShift == null ? 'Add Work Shift' : 'Edit Work Shift'),
@@ -580,16 +609,66 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                             Expanded(
                               child: TextFormField(
                                 controller: startCtrl,
-                                decoration: const InputDecoration(labelText: 'Start Time *', hintText: '09:00', prefixIcon: Icon(Icons.login_rounded)),
-                                validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                                decoration: InputDecoration(
+                                  labelText: 'Start Time *',
+                                  hintText: '09:00 AM',
+                                  prefixIcon: const Icon(Icons.login_rounded),
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.access_time_rounded, size: 20),
+                                    onPressed: () async {
+                                      final initialMins = ShiftDurationCalculator.parseTimeToMinutes(startCtrl.text.trim()) ?? 540;
+                                      final picked = await showTimePicker(
+                                        context: context,
+                                        initialTime: TimeOfDay(hour: initialMins ~/ 60, minute: initialMins % 60),
+                                      );
+                                      if (picked != null) {
+                                        startCtrl.text = ShiftDurationCalculator.formatMinutesTo12Hour(
+                                          ShiftDurationCalculator.timeOfDayToMinutes(picked),
+                                        );
+                                        recalculate(setModalState);
+                                      }
+                                    },
+                                  ),
+                                ),
+                                onChanged: (_) => recalculate(setModalState),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) return 'Required';
+                                  if (ShiftDurationCalculator.parseTimeToMinutes(v.trim()) == null) return 'Invalid time format (e.g. 09:00 AM)';
+                                  return null;
+                                },
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextFormField(
                                 controller: endCtrl,
-                                decoration: const InputDecoration(labelText: 'End Time *', hintText: '18:00', prefixIcon: Icon(Icons.logout_rounded)),
-                                validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
+                                decoration: InputDecoration(
+                                  labelText: 'End Time *',
+                                  hintText: '06:00 PM',
+                                  prefixIcon: const Icon(Icons.logout_rounded),
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.access_time_rounded, size: 20),
+                                    onPressed: () async {
+                                      final initialMins = ShiftDurationCalculator.parseTimeToMinutes(endCtrl.text.trim()) ?? 1080;
+                                      final picked = await showTimePicker(
+                                        context: context,
+                                        initialTime: TimeOfDay(hour: initialMins ~/ 60, minute: initialMins % 60),
+                                      );
+                                      if (picked != null) {
+                                        endCtrl.text = ShiftDurationCalculator.formatMinutesTo12Hour(
+                                          ShiftDurationCalculator.timeOfDayToMinutes(picked),
+                                        );
+                                        recalculate(setModalState);
+                                      }
+                                    },
+                                  ),
+                                ),
+                                onChanged: (_) => recalculate(setModalState),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) return 'Required';
+                                  if (ShiftDurationCalculator.parseTimeToMinutes(v.trim()) == null) return 'Invalid time format (e.g. 06:00 PM)';
+                                  return null;
+                                },
                               ),
                             ),
                           ],
@@ -602,6 +681,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                                 controller: breakCtrl,
                                 decoration: const InputDecoration(labelText: 'Break Duration (mins) *', prefixIcon: Icon(Icons.free_breakfast_outlined)),
                                 keyboardType: TextInputType.number,
+                                onChanged: (_) => recalculate(setModalState),
                                 validator: (v) => (v == null || int.tryParse(v) == null) ? 'Required' : null,
                               ),
                             ),
@@ -617,14 +697,99 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
+
+                        // Dynamic Shift Duration Real-Time Summary Card
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: calcResult.isValid
+                                ? (isDark ? const Color(0xFF1E1B4B) : const Color(0xFFEEF2FF))
+                                : (isDark ? const Color(0xFF450A0A) : const Color(0xFFFEF2F2)),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: calcResult.isValid
+                                  ? (isDark ? const Color(0xFF4338CA) : const Color(0xFFC7D2FE))
+                                  : (isDark ? const Color(0xFF991B1B) : const Color(0xFFFCA5A5)),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    calcResult.isValid ? Icons.auto_awesome_rounded : Icons.warning_amber_rounded,
+                                    size: 16,
+                                    color: calcResult.isValid ? const Color(0xFF4F46E5) : Colors.red,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    calcResult.isValid ? 'Shift Duration Summary' : 'Invalid Time / Duration',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: calcResult.isValid
+                                          ? (isDark ? const Color(0xFFA5B4FC) : const Color(0xFF3730A3))
+                                          : Colors.red,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              if (calcResult.isValid) ...[
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Total Shift', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
+                                        const SizedBox(height: 2),
+                                        Text(calcResult.formattedTotalDuration, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
+                                      ],
+                                    ),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Break', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          int.tryParse(breakCtrl.text.trim()) != null && int.parse(breakCtrl.text.trim()) > 0
+                                              ? ShiftDurationCalculator.formatMinutesToHumanReadable(int.parse(breakCtrl.text.trim()))
+                                              : 'None',
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white70 : const Color(0xFF475569)),
+                                        ),
+                                      ],
+                                    ),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text('Net Working Hours', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
+                                        const SizedBox(height: 2),
+                                        Text(calcResult.formattedWorkingHours, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ] else ...[
+                                Text(
+                                  calcResult.errorMessage ?? 'Please enter valid Start Time and End Time',
+                                  style: const TextStyle(fontSize: 11, color: Colors.red),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
                         Row(
                           children: [
                             Expanded(
                               child: TextFormField(
                                 controller: hrsCtrl,
-                                decoration: const InputDecoration(labelText: 'Daily Net Hours *', prefixIcon: Icon(Icons.hourglass_bottom_rounded)),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                validator: (v) => (v == null || double.tryParse(v) == null) ? 'Required' : null,
+                                readOnly: true,
+                                decoration: const InputDecoration(labelText: 'Daily Net Hours (Auto)', prefixIcon: Icon(Icons.hourglass_bottom_rounded)),
+                                style: const TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -712,6 +877,16 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                       ? null
                       : () async {
                           if (formKey.currentState!.validate()) {
+                            if (!calcResult.isValid) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(calcResult.errorMessage ?? 'Invalid shift duration'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+
                             final user = ref.read(authProvider).user;
                             if (user == null) return;
 
@@ -725,7 +900,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                               startTime: startCtrl.text.trim(),
                               endTime: endCtrl.text.trim(),
                               breakDurationMinutes: int.parse(breakCtrl.text.trim()),
-                              workingHours: double.parse(hrsCtrl.text.trim()),
+                              workingHours: calcResult.workingHours,
                               gracePeriodMinutes: int.parse(graceCtrl.text.trim()),
                               halfDayThresholdHours: double.parse(halfDayCtrl.text.trim()),
                               overtimeAllowed: overtimeAllowed,
@@ -741,9 +916,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                               if (context.mounted) {
                                 if (result == 'success') {
                                   Navigator.pop(ctx);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Work Shift saved successfully.'), backgroundColor: Colors.green),
-                                  );
+                                  AppNotification.showSuccess(context, 'Work Shift saved successfully.');
                                 } else {
                                   setModalState(() { isSubmitting = false; });
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -834,9 +1007,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                             }
                             if (context.mounted) Navigator.pop(context); // Dismiss loader
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Shift assigned successfully.'), backgroundColor: Colors.green),
-                              );
+                              AppNotification.showSuccess(context, 'Shift assigned successfully.');
                             }
                           } catch (e) {
                             if (context.mounted) Navigator.pop(context); // Dismiss loader
@@ -884,9 +1055,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                         await ref.read(adminShiftsProvider.notifier).deleteShift(id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Shift archived successfully.'), backgroundColor: Colors.green),
-                          );
+                          AppNotification.showSuccess(context, 'Shift archived successfully.');
                         }
                       } catch (e) {
                         if (context.mounted) {
@@ -934,9 +1103,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                         await ref.read(adminShiftsProvider.notifier).restoreShift(id);
                         if (context.mounted) {
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Shift restored successfully.'), backgroundColor: Colors.green),
-                          );
+                          AppNotification.showSuccess(context, 'Shift restored successfully.');
                         }
                       } catch (e) {
                         if (context.mounted) {

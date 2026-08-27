@@ -7,6 +7,7 @@ import '../../../shared/models/company_model.dart';
 import '../../../shared/models/payment_history_model.dart';
 import '../../../shared/services/subscription_service.dart';
 import '../../../constants/user_roles.dart';
+import '../../../shared/utils/app_notification.dart';
 
 // Live stream of payment history for a company
 final paymentHistoryProvider = StreamProvider.autoDispose.family<List<PaymentHistoryModel>, String>((ref, companyId) {
@@ -91,9 +92,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                 await SubscriptionService.updatePlan(company.companyId, 'Paid');
                 await ref.read(companyProvider.notifier).loadCompany();
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Successfully upgraded to the Paid Plan.'), backgroundColor: Colors.green),
-                  );
+                  AppNotification.showSuccess(context, 'Successfully upgraded to the Paid Plan.');
                 }
               } catch (e) {
                 if (context.mounted) {
@@ -314,9 +313,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                         await SubscriptionService.resumeSubscription(company.companyId);
                         await ref.read(companyProvider.notifier).loadCompany();
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Paid Plan resumed successfully.'), backgroundColor: Colors.green),
-                          );
+                          AppNotification.showSuccess(context, 'Paid Plan resumed successfully.');
                         }
                       } catch (e) {
                         if (context.mounted) {
@@ -481,9 +478,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                       await ref.read(companyProvider.notifier).loadCompany();
                       if (dialogCtx.mounted) Navigator.pop(dialogCtx);
                       if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Payment Successful! Thank you.'), backgroundColor: Colors.green),
-                        );
+                        AppNotification.showSuccess(context, 'Payment Successful! Thank you.');
                       }
                     } catch (e) {
                       if (dialogCtx.mounted) Navigator.pop(dialogCtx);
@@ -597,9 +592,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                                   await SubscriptionService.resumeSubscription(company.companyId);
                                   await ref.read(companyProvider.notifier).loadCompany();
                                   if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Paid Plan resumed successfully.'), backgroundColor: Colors.green),
-                                    );
+                                    AppNotification.showSuccess(context, 'Paid Plan resumed successfully.');
                                   }
                                 } finally {
                                   setState(() => _isProcessing = false);

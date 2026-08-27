@@ -42,6 +42,16 @@ final companyAdminRepositoryProvider = Provider<CompanyAdminRepository>((ref) {
   return CompanyAdminRepository(firestore: ref.watch(firestoreProvider));
 });
 
+final companyCustomRolesProvider = StreamProvider<List<String>>((ref) {
+  final user = ref.watch(authProvider).user;
+  if (user == null) return Stream.value([]);
+  return FirebaseFirestore.instance
+      .collection('roles')
+      .where('companyId', isEqualTo: user.companyId)
+      .snapshots()
+      .map((snap) => snap.docs.map((doc) => (doc.data()['roleName'] ?? '').toString()).where((r) => r.isNotEmpty).toList());
+});
+
 // ==========================================
 // HR MANAGEMENT NOTIFIER
 // ==========================================
@@ -264,6 +274,7 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
 
   Future<Map<String, String>> createEmployee({
     required String name,
+    required String employeeId,
     required String personalEmail,
     required String phoneNumber,
     required String? departmentId,
@@ -283,6 +294,11 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
     final adminUser = _ref.read(authProvider).user;
     if (adminUser == null) {
       throw Exception('Admin user session not found.');
+    }
+
+    final trimmedEmpId = employeeId.trim();
+    if (trimmedEmpId.isEmpty) {
+      throw Exception('Employee ID is required.');
     }
 
     // Backend Validations
@@ -305,6 +321,17 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
       if (dupPersonalSnap.docs.isNotEmpty) {
         throw Exception('This personal email is already registered.');
       }
+    }
+
+    // Check Employee ID uniqueness within company
+    final dupEmpIdSnap = await FirebaseFirestore.instance
+        .collection(FirestoreCollections.users)
+        .where('companyId', isEqualTo: adminUser.companyId)
+        .where('employeeId', isEqualTo: trimmedEmpId)
+        .limit(1)
+        .get();
+    if (dupEmpIdSnap.docs.isNotEmpty) {
+      throw Exception('Employee ID "$trimmedEmpId" already exists in your company. Please use a unique Employee ID.');
     }
 
     // 1. Get or generate companyCode
@@ -361,25 +388,11 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
       throw Exception('Free Plan employee limit reached. Upgrade your subscription to add more employees.');
     }
 
-    // 2. Generate unique Employee ID & Company Email (e.g. SHER42 / sher42@jazzcreative.com)
     final companyObj = await _ref.read(companyRepositoryProvider).getCompany(adminUser.companyId);
     final activeCompanyName = companyObj?.name ?? adminUser.companyName;
 
-    final empListSnap = await FirebaseFirestore.instance
-        .collection(FirestoreCollections.users)
-        .where('companyId', isEqualTo: adminUser.companyId)
-        .get();
-    final existingEmployees = empListSnap.docs.map((doc) => UserModel.fromMap(doc.data())).toList();
-
-    final generated = EmployeeIdGenerator.generateCredentials(
-      employeeName: name,
-      existingEmployees: existingEmployees,
-      companyName: activeCompanyName,
-      company: companyObj,
-    );
-
-    final finalEmployeeId = generated.employeeId;
-    final companyEmail = generated.companyEmail;
+    final finalEmployeeId = trimmedEmpId;
+    final userAuthEmail = trimmedPersonalEmail;
 
     // 4. Get company default employee password
     String tempPassword = companyObj?.defaultEmployeePassword ?? '';
@@ -408,9 +421,9 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
 
       final tempAuth = FirebaseAuth.instanceFor(app: tempApp);
 
-      // Create the user in Auth using companyEmail
+      // Create the user in Auth using personal email
       credential = await tempAuth.createUserWithEmailAndPassword(
-        email: companyEmail,
+        email: userAuthEmail,
         password: tempPassword,
       );
 
@@ -419,7 +432,7 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
       // Create employee record in Firestore
       final newEmp = UserModel(
         uid: authUid,
-        email: companyEmail,
+        email: userAuthEmail,
         name: name,
         role: UserRoles.employee,
         companyId: adminUser.companyId,
@@ -434,7 +447,7 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
         managerId: managerId,
         joiningDate: joiningDate,
         employmentType: employmentType,
-        status: 'Pending Activation',
+        status: 'active',
         mustChangePassword: true,
         tempPassword: tempPassword,
         encryptedPassword: PasswordEncryption.encrypt(tempPassword),
@@ -446,14 +459,14 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
         salaryStructureName: salaryStructureName,
         employeeId: finalEmployeeId,
         companyCode: companyCode,
-        employeeEmail: personalEmail.trim(),
+        employeeEmail: userAuthEmail,
         firstLogin: true,
         passwordChanged: false,
-        personalEmail: personalEmail.trim(),
-        companyEmail: companyEmail,
+        personalEmail: userAuthEmail,
+        companyEmail: userAuthEmail,
         tenantId: adminUser.companyId,
         temporaryPasswordRequired: true,
-        accountStatus: 'Pending Activation',
+        accountStatus: 'active',
       );
 
       await _repo.saveUser(newEmp);
@@ -461,11 +474,11 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
       // Trigger simulated welcome email
       try {
         await _ref.read(emailServiceProvider).sendWelcomeEmail(
-          recipientEmail: personalEmail.trim(),
+          recipientEmail: userAuthEmail,
           employeeName: name,
           companyName: adminUser.companyName,
           employeeId: finalEmployeeId,
-          companyEmail: companyEmail,
+          companyEmail: userAuthEmail,
           tempPassword: tempPassword,
         );
       } catch (e) {
@@ -500,7 +513,7 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
       return {
         'employeeId': finalEmployeeId,
         'companyCode': companyCode,
-        'companyEmail': companyEmail,
+        'companyEmail': userAuthEmail,
         'tempPassword': tempPassword,
       };
     } catch (e) {

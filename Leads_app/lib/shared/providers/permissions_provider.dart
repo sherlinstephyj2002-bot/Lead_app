@@ -180,77 +180,14 @@ Future<void> seedDefaultRolesAndPermissions(String companyId) async {
       }
       await batch.commit();
     }
-
-    // 2. Check if roles are seeded for this company
-    final rolesCount = await db
-        .collection('roles')
-        .where('companyId', isEqualTo: companyId)
-        .limit(1)
-        .get();
-
-    if (rolesCount.docs.isEmpty) {
-      final systemRoles = [
-        {
-          'id': '${companyId}_company_admin',
-          'roleName': 'Company Admin',
-          'description': 'Full control over company settings and data.',
-          'isSystemRole': true,
-          'perms': defaultRolePermissions[UserRoles.companyAdmin] ?? []
-        },
-        {
-          'id': '${companyId}_hr_admin',
-          'roleName': 'HR Admin',
-          'description': 'Manage employee records, attendance, and leave approvals.',
-          'isSystemRole': true,
-          'perms': defaultRolePermissions[UserRoles.hrAdmin] ?? []
-        },
-        {
-          'id': '${companyId}_hr_executive',
-          'roleName': 'HR Executive',
-          'description': 'Onboard employees, view attendance, and process leave requests.',
-          'isSystemRole': true,
-          'perms': defaultRolePermissions[UserRoles.hrExecutive] ?? []
-        },
-        {
-          'id': '${companyId}_employee',
-          'roleName': 'Employee',
-          'description': 'Standard employee access (View directory, apply leaves).',
-          'isSystemRole': true,
-          'perms': defaultRolePermissions[UserRoles.employee] ?? []
-        },
-      ];
-
-      final batch = db.batch();
-      for (final r in systemRoles) {
-        batch.set(db.collection('roles').doc(r['id'] as String), {
-          'roleId': r['id'],
-          'companyId': companyId,
-          'roleName': r['roleName'],
-          'description': r['description'],
-          'isSystemRole': r['isSystemRole'],
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        final permsList = r['perms'] as List<String>;
-        for (final p in permsList) {
-          final mappingId = '${r['id']}_$p';
-          batch.set(db.collection('role_permissions').doc(mappingId), {
-            'roleId': r['id'],
-            'permissionId': p,
-          });
-        }
-      }
-      await batch.commit();
-    }
   } catch (e) {
-    debugPrint('Failed to seed default roles and permissions: $e');
+    debugPrint('Failed to seed permissions catalog: $e');
   }
 }
 
 String _normalizeRoleStr(String r) => r.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ').trim();
 
-// StreamProvider that fetches permissions dynamically from Firestore
+// StreamProvider that fetches permissions dynamically from Firestore for custom roles
 final userPermissionsProvider = StreamProvider<List<String>>((ref) {
   final authState = ref.watch(authProvider);
   final user = authState.user;
@@ -258,10 +195,14 @@ final userPermissionsProvider = StreamProvider<List<String>>((ref) {
     return Stream.value([]);
   }
 
-  // Seeding run in background
+  if (user.role == UserRoles.companyAdmin) {
+    return Stream.value(defaultRolePermissions[UserRoles.companyAdmin] ?? []);
+  }
+
+  // Ensure permission catalog exists
   seedDefaultRolesAndPermissions(user.companyId);
 
-  // Fetch dynamic permissions from roles & role_permissions collections
+  // Fetch dynamic permissions from custom roles & role_permissions collections
   return FirebaseFirestore.instance
       .collection('roles')
       .where('companyId', isEqualTo: user.companyId)
@@ -269,12 +210,13 @@ final userPermissionsProvider = StreamProvider<List<String>>((ref) {
       .asyncMap((rolesSnapshot) async {
         final targetRoleNorm = _normalizeRoleStr(user.role);
         final match = rolesSnapshot.docs.where((doc) {
-          final name = doc.data()['roleName'] ?? '';
-          return _normalizeRoleStr(name.toString()) == targetRoleNorm;
+          final data = doc.data();
+          final name = data['roleName'] ?? '';
+          final id = doc.id;
+          return id == user.role || _normalizeRoleStr(name.toString()) == targetRoleNorm;
         });
 
         if (match.isEmpty) {
-          // System fallback
           return defaultRolePermissions[user.role] ?? [];
         }
 
