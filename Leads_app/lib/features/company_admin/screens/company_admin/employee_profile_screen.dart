@@ -1300,29 +1300,49 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
                           _buildInfoRow('Company Name', targetEmployee.companyName, showCopyIcon: true),
                           _buildDivider(),
                           if (isEditMode && isAdminOrHR) ...[
-                            Consumer(
-                              builder: (context, ref, _) {
-                                final depts = ref.watch(adminDepartmentsProvider).value ?? [];
-                                return DropdownButtonFormField<String>(
-                                  value: depts.any((d) => d.departmentId == _selectedDeptId) ? _selectedDeptId : null,
-                                  decoration: const InputDecoration(labelText: 'Department', prefixIcon: Icon(Icons.corporate_fare_outlined)),
-                                  items: depts.map((d) => DropdownMenuItem(value: d.departmentId, child: Text(d.name))).toList(),
-                                  onChanged: (val) => setState(() => _selectedDeptId = val),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 12),
-                            Consumer(
-                              builder: (context, ref, _) {
-                                final desigs = ref.watch(adminDesignationsProvider).value ?? [];
-                                return DropdownButtonFormField<String>(
-                                  value: desigs.any((d) => d.designationId == _selectedDesigId) ? _selectedDesigId : null,
-                                  decoration: const InputDecoration(labelText: 'Designation', prefixIcon: Icon(Icons.badge_outlined)),
-                                  items: desigs.map((d) => DropdownMenuItem(value: d.designationId, child: Text(d.designationName))).toList(),
-                                  onChanged: (val) => setState(() => _selectedDesigId = val),
-                                );
-                              },
-                            ),
+                             Consumer(
+                               builder: (context, ref, _) {
+                                 final depts = ref.watch(adminDepartmentsProvider).value ?? [];
+                                 return DropdownButtonFormField<String>(
+                                   value: depts.any((d) => d.departmentId == _selectedDeptId) ? _selectedDeptId : null,
+                                   decoration: const InputDecoration(labelText: 'Department', prefixIcon: Icon(Icons.corporate_fare_outlined)),
+                                   items: depts.map((d) => DropdownMenuItem(value: d.departmentId, child: Text(d.name))).toList(),
+                                   onChanged: (val) {
+                                     setState(() {
+                                       _selectedDeptId = val;
+                                       if (_selectedDesigId != null) {
+                                         final desigs = ref.read(adminDesignationsProvider).value ?? [];
+                                         final isDesigValid = desigs.any((d) => d.designationId == _selectedDesigId && (d.departmentId == val || d.managedDepartmentIds.contains(val)));
+                                         if (!isDesigValid) {
+                                           _selectedDesigId = null;
+                                         }
+                                       }
+                                     });
+                                   },
+                                 );
+                               },
+                             ),
+                             const SizedBox(height: 12),
+                             Consumer(
+                               builder: (context, ref, _) {
+                                 final desigs = ref.watch(adminDesignationsProvider).value ?? [];
+                                 final filteredDesigs = desigs.where((d) {
+                                   final isActiveOrSelected = (d.status.toLowerCase() == 'active') || d.designationId == _selectedDesigId;
+                                   if (!isActiveOrSelected) return false;
+                                   if (_selectedDeptId != null && _selectedDeptId!.isNotEmpty) {
+                                     return d.departmentId == _selectedDeptId || d.managedDepartmentIds.contains(_selectedDeptId);
+                                   }
+                                   return true;
+                                 }).toList();
+                                 final hint = _selectedDeptId == null ? 'Select Department First' : 'Select Designation';
+                                 return DropdownButtonFormField<String>(
+                                   value: filteredDesigs.any((d) => d.designationId == _selectedDesigId) ? _selectedDesigId : null,
+                                   decoration: InputDecoration(labelText: 'Designation', prefixIcon: const Icon(Icons.badge_outlined), hintText: hint),
+                                   items: filteredDesigs.map((d) => DropdownMenuItem(value: d.designationId, child: Text(d.designationName))).toList(),
+                                   onChanged: (val) => setState(() => _selectedDesigId = val),
+                                 );
+                               },
+                             ),
                             const SizedBox(height: 12),
                           ] else ...[
                             _buildInfoRow('Department', resolvedDeptName ?? targetEmployee.department ?? 'N/A'),
@@ -1856,10 +1876,24 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
   }
 
   void _handleResetPassword(BuildContext context, String uid, String name) {
-    final email = _employeeState.email.isNotEmpty ? _employeeState.email : _employeeState.companyEmail;
-    final hasEmail = email != null && email.contains('@');
+    final personalEmail = _employeeState.personalEmail;
+    final primaryEmail = _employeeState.email;
+    final compEmail = _employeeState.companyEmail;
 
-    if (!hasEmail) {
+    String? targetEmail;
+    if (personalEmail != null && personalEmail.contains('@') && !personalEmail.endsWith('@worktrack.internal') && !personalEmail.endsWith('@worktrack.com')) {
+      targetEmail = personalEmail;
+    } else if (primaryEmail.contains('@') && !primaryEmail.endsWith('@worktrack.internal') && !primaryEmail.endsWith('@worktrack.com')) {
+      targetEmail = primaryEmail;
+    } else if (compEmail != null && compEmail.contains('@') && !compEmail.endsWith('@worktrack.internal') && !compEmail.endsWith('@worktrack.com')) {
+      targetEmail = compEmail;
+    } else {
+      targetEmail = primaryEmail.isNotEmpty ? primaryEmail : compEmail;
+    }
+
+    final hasValidEmail = targetEmail != null && targetEmail.contains('@');
+
+    if (!hasValidEmail) {
       _showNoCredentialsDialog(context);
       return;
     }
@@ -1876,8 +1910,8 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
           ],
         ),
         content: Text(
-          'Send password reset email link to $name ($email)?\n\n'
-          'The employee will receive an email containing a secure link to create a new password.',
+          'Send password reset email link to $name ($targetEmail)?\n\n'
+          'The employee will receive an email containing a secure link to reset and create a new password.',
           style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: Color(0xFF475569)),
         ),
         actions: [
@@ -1888,7 +1922,7 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              _showResetProgressDialog(context, email, name, uid);
+              _showResetProgressDialog(context, targetEmail!, name, uid);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF5B4CF0),
@@ -1910,7 +1944,38 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
         Future.microtask(() async {
           try {
             await ref.read(authRepositoryProvider).sendPasswordResetEmail(email);
-            await FirebaseFirestore.instance.collection('users').doc(uid).update({'mustChangePassword': true});
+            
+            // Mark user profile
+            await FirebaseFirestore.instance.collection('users').doc(uid).update({
+              'mustChangePassword': true,
+              'temporaryPasswordRequired': true,
+            });
+
+            // Dispatch in-app notification for the employee
+            final currentAdmin = ref.read(authProvider).user;
+            await FirebaseFirestore.instance.collection('notifications').add({
+              'recipientId': uid,
+              'userId': uid,
+              'companyId': _employeeState.companyId,
+              'title': 'Password Reset Requested',
+              'body': 'Password reset instructions have been sent to your registered email address.',
+              'type': 'PASSWORD_RESET',
+              'timestamp': FieldValue.serverTimestamp(),
+              'isRead': false,
+            });
+
+            // Record audit log
+            if (currentAdmin != null) {
+              await FirebaseFirestore.instance.collection('audit_logs').add({
+                'companyId': currentAdmin.companyId,
+                'performedBy': currentAdmin.name,
+                'performedById': currentAdmin.uid,
+                'action': 'RESET_PASSWORD',
+                'details': 'Password reset link sent to $name ($email)',
+                'timestamp': FieldValue.serverTimestamp(),
+              });
+            }
+
             if (ctx.mounted) Navigator.pop(ctx);
             if (context.mounted) {
               showDialog(
@@ -1925,7 +1990,7 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
                     ],
                   ),
                   content: Text(
-                    'A password reset link has been successfully sent to $name ($email).\n\nThey will be prompted to set a new password.',
+                    'A password reset link has been successfully sent to $name ($email).\n\nIn-app notification and audit log entries have been created.',
                     style: const TextStyle(fontFamily: 'Inter', fontSize: 13, color: Color(0xFF475569)),
                   ),
                   actions: [

@@ -298,6 +298,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final cols = constraints.maxWidth > 900 ? 3 : (constraints.maxWidth > 600 ? 2 : 1);
+                      final aspect = cols == 3 ? 1.15 : (cols == 2 ? 1.05 : 1.35);
                       return GridView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -306,33 +307,25 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                           crossAxisCount: cols,
                           crossAxisSpacing: 16,
                           mainAxisSpacing: 16,
-                          childAspectRatio: 1.35,
+                          childAspectRatio: aspect,
                         ),
                         itemBuilder: (context, idx) {
                           final shift = paginatedShifts[idx];
-
-                          Color statusBg;
-                          Color statusText;
-                          switch (shift.status.toLowerCase()) {
-                            case 'active':
-                              statusBg = isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7);
-                              statusText = isDark ? const Color(0xFF34D399) : const Color(0xFF007834);
-                              break;
-                            case 'suspended':
-                              statusBg = isDark ? const Color(0xFF78350F) : const Color(0xFFFEF3C7);
-                              statusText = isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
-                              break;
-                            default:
-                              statusBg = isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9);
-                              statusText = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
-                          }
+                          final isShiftActive = shift.status.toLowerCase() == 'active';
 
                           return Container(
-                            padding: const EdgeInsets.all(20),
+                            padding: const EdgeInsets.all(18),
                             decoration: BoxDecoration(
                               color: cardBg,
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(16),
                               border: Border.all(color: borderCol),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,79 +333,195 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                                 Row(
                                   children: [
                                     Container(
-                                      width: 40,
-                                      height: 40,
+                                      padding: const EdgeInsets.all(8),
                                       decoration: BoxDecoration(
                                         color: const Color(0xFF5B4CF0).withValues(alpha: isDark ? 0.2 : 0.08),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: const Icon(Icons.schedule_rounded, color: Color(0xFF5B4CF0), size: 20),
                                     ),
-                                    const SizedBox(width: 12),
+                                    const SizedBox(width: 10),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
                                             shift.shiftName,
-                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isDark ? Colors.white : const Color(0xFF1E293B)),
+                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: titleColor),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                           ),
-                                          const SizedBox(height: 2),
                                           Text(
                                             shift.shiftCode,
-                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
                                           ),
                                         ],
                                       ),
                                     ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: statusBg,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        shift.status.toUpperCase(),
-                                        style: TextStyle(color: statusText, fontSize: 9, fontWeight: FontWeight.bold),
+                                    // Activate / Deactivate Toggle
+                                    Tooltip(
+                                      message: isShiftActive ? 'Deactivate Shift' : 'Activate Shift',
+                                      child: Transform.scale(
+                                        scale: 0.8,
+                                        child: Switch(
+                                          value: isShiftActive,
+                                          activeColor: const Color(0xFF10B981),
+                                          onChanged: (val) async {
+                                            final newStatus = val ? 'active' : 'suspended';
+                                            final updated = shift.copyWith(status: newStatus, updatedAt: DateTime.now());
+                                            await ref.read(adminShiftsProvider.notifier).saveShift(updated);
+                                          },
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Timing: ${shift.startTime} - ${shift.endTime} (${ShiftDurationCalculator.formatMinutesToHumanReadable((shift.workingHours * 60).round())})',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white : const Color(0xFF1E293B)),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Break: ${shift.breakDurationMinutes} mins • Grace: ${shift.gracePeriodMinutes} mins',
-                                  style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                                ),
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 10),
+
+                                // 🕘 Timings
                                 Row(
                                   children: [
-                                    Text('OT Allowed: ', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))),
-                                    Icon(
-                                      shift.overtimeAllowed ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                                      color: shift.overtimeAllowed ? (isDark ? const Color(0xFF34D399) : const Color(0xFF007834)) : const Color(0xFFBA1A1A),
-                                      size: 14,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        'Offs: ${shift.weeklyOffDays.join(", ")}',
-                                        style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                    const Icon(Icons.access_time_rounded, size: 15, color: Color(0xFF6366F1)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      '${shift.startTime} – ${shift.endTime}',
+                                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: titleColor),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 6),
+
+                                // ☕ Break Duration
+                                Row(
+                                  children: [
+                                    const Icon(Icons.coffee_rounded, size: 15, color: Color(0xFFF59E0B)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Break: ${shift.breakDurationMinutes >= 60 && shift.breakDurationMinutes % 60 == 0 ? "${shift.breakDurationMinutes ~/ 60} ${shift.breakDurationMinutes ~/ 60 == 1 ? "Hour" : "Hours"}" : "${shift.breakDurationMinutes} Mins"}',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+
+                                // ⏱ Working Hours
+                                Row(
+                                  children: [
+                                    const Icon(Icons.timer_rounded, size: 15, color: Color(0xFF10B981)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Working Hours: ${shift.workingHours.toStringAsFixed(2).replaceAll(RegExp(r'\.00$'), '')} Hours',
+                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+
+                                // ➕ OT Limit / Overtime Status
+                                Row(
+                                  children: [
+                                    const Icon(Icons.add_circle_outline_rounded, size: 15, color: Color(0xFFEC4899)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'OT Limit: ',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: titleColor),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    if (shift.overtimeAllowed) ...[
+                                      Container(
+                                        height: 26,
+                                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                                        decoration: BoxDecoration(
+                                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: borderCol),
+                                        ),
+                                        child: DropdownButtonHideUnderline(
+                                          child: DropdownButton<double>(
+                                            value: [1.0, 2.0, 3.0, 4.0].contains(shift.otLimitHours) ? shift.otLimitHours : 2.0,
+                                            isDense: true,
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B)),
+                                            dropdownColor: cardBg,
+                                            icon: const Icon(Icons.arrow_drop_down, size: 16),
+                                            items: const [
+                                              DropdownMenuItem(value: 1.0, child: Text('1 Hour')),
+                                              DropdownMenuItem(value: 2.0, child: Text('2 Hours')),
+                                              DropdownMenuItem(value: 3.0, child: Text('3 Hours')),
+                                              DropdownMenuItem(value: 4.0, child: Text('4 Hours')),
+                                            ],
+                                            onChanged: (newLimit) async {
+                                              if (newLimit != null) {
+                                                final updated = shift.copyWith(otLimitHours: newLimit, updatedAt: DateTime.now());
+                                                await ref.read(adminShiftsProvider.notifier).saveShift(updated);
+                                              }
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          'Disabled',
+                                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+
+                                // Summary Breakdown Banner
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: borderCol),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Regular Hours', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontWeight: FontWeight.w500)),
+                                          const SizedBox(height: 1),
+                                          Text(ShiftDurationCalculator.formatHoursShort(shift.workingHours), style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: titleColor)),
+                                        ],
+                                      ),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Maximum OT', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontWeight: FontWeight.w500)),
+                                          const SizedBox(height: 1),
+                                          Text(
+                                            shift.overtimeAllowed ? ShiftDurationCalculator.formatHoursShort(shift.otLimitHours) : 'Disabled',
+                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: shift.overtimeAllowed ? const Color(0xFFEC4899) : const Color(0xFF94A3B8)),
+                                          ),
+                                        ],
+                                      ),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          Text('Max Total Working Time', style: TextStyle(fontSize: 9, color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
+                                          const SizedBox(height: 1),
+                                          Text(
+                                            ShiftDurationCalculator.formatHoursShort(shift.maxTotalWorkingTimeHours),
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0)),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
                                 const Spacer(),
                                 Divider(color: borderCol, height: 1),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 6),
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
@@ -537,9 +646,9 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
     final graceCtrl = TextEditingController(text: existingShift?.gracePeriodMinutes.toString() ?? '15');
     final halfDayCtrl = TextEditingController(text: existingShift?.halfDayThresholdHours.toString() ?? '4.0');
     final hrsCtrl = TextEditingController(text: existingShift?.workingHours.toString() ?? '8.0');
-    final otStartCtrl = TextEditingController(text: existingShift?.overtimeStartAfterHours.toString() ?? '9.0');
     
-    bool overtimeAllowed = existingShift?.overtimeAllowed ?? false;
+    double selectedOtLimit = existingShift?.otLimitHours ?? 2.0;
+    bool overtimeAllowed = existingShift?.overtimeAllowed ?? true;
     String selectedStatus = existingShift?.status ?? 'active';
 
     final daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -585,7 +694,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text(existingShift == null ? 'Add Work Shift' : 'Edit Work Shift'),
               content: SizedBox(
-                width: 480,
+                width: 500,
                 child: Form(
                   key: formKey,
                   child: SingleChildScrollView(
@@ -688,17 +797,17 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextFormField(
-                                controller: graceCtrl,
-                                decoration: const InputDecoration(labelText: 'Grace Period (mins) *', prefixIcon: Icon(Icons.av_timer_rounded)),
-                                keyboardType: TextInputType.number,
-                                validator: (v) => (v == null || int.tryParse(v) == null) ? 'Required' : null,
+                                controller: hrsCtrl,
+                                readOnly: true,
+                                decoration: const InputDecoration(labelText: 'Working Hours (Auto) *', prefixIcon: Icon(Icons.hourglass_bottom_rounded)),
+                                style: const TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 12),
 
-                        // Dynamic Shift Duration Real-Time Summary Card
+                        // Working Hours Summary Box
                         Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
@@ -724,7 +833,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
-                                    calcResult.isValid ? 'Shift Duration Summary' : 'Invalid Time / Duration',
+                                    calcResult.isValid ? 'WORKING HOURS SUMMARY' : 'Invalid Time / Duration',
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
@@ -735,7 +844,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 10),
                               if (calcResult.isValid) ...[
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -743,30 +852,43 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                                     Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text('Total Shift', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
+                                        Text('Shift Duration', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
                                         const SizedBox(height: 2),
-                                        Text(calcResult.formattedTotalDuration, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
+                                        Text(ShiftDurationCalculator.formatHoursShort(calcResult.workingHours), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
                                       ],
                                     ),
                                     Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text('Break', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
+                                        Text('Overtime', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
                                         const SizedBox(height: 2),
                                         Text(
-                                          int.tryParse(breakCtrl.text.trim()) != null && int.parse(breakCtrl.text.trim()) > 0
-                                              ? ShiftDurationCalculator.formatMinutesToHumanReadable(int.parse(breakCtrl.text.trim()))
-                                              : 'None',
-                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white70 : const Color(0xFF475569)),
+                                          overtimeAllowed ? 'Enabled' : 'Disabled',
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: overtimeAllowed ? const Color(0xFF10B981) : Colors.grey),
                                         ),
                                       ],
                                     ),
+                                    if (overtimeAllowed)
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('OT Limit', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            ShiftDurationCalculator.formatHoursShort(selectedOtLimit),
+                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFEC4899)),
+                                          ),
+                                        ],
+                                      ),
                                     Column(
                                       crossAxisAlignment: CrossAxisAlignment.end,
                                       children: [
-                                        Text('Net Working Hours', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
+                                        Text('Max Working Time', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
                                         const SizedBox(height: 2),
-                                        Text(calcResult.formattedWorkingHours, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
+                                        Text(
+                                          ShiftDurationCalculator.formatHoursShort(overtimeAllowed ? (calcResult.workingHours + selectedOtLimit) : calcResult.workingHours),
+                                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5)),
+                                        ),
                                       ],
                                     ),
                                   ],
@@ -784,21 +906,70 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
 
                         Row(
                           children: [
+                            if (overtimeAllowed) ...[
+                              Expanded(
+                                child: DropdownButtonFormField<double>(
+                                  value: [1.0, 2.0, 3.0, 4.0].contains(selectedOtLimit) ? selectedOtLimit : 2.0,
+                                  decoration: const InputDecoration(
+                                    labelText: 'OT Limit *',
+                                    prefixIcon: Icon(Icons.more_time_rounded),
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(value: 1.0, child: Text('1 Hour')),
+                                    DropdownMenuItem(value: 2.0, child: Text('2 Hours (Default)')),
+                                    DropdownMenuItem(value: 3.0, child: Text('3 Hours')),
+                                    DropdownMenuItem(value: 4.0, child: Text('4 Hours')),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setModalState(() {
+                                        selectedOtLimit = val;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                            ],
                             Expanded(
                               child: TextFormField(
-                                controller: hrsCtrl,
-                                readOnly: true,
-                                decoration: const InputDecoration(labelText: 'Daily Net Hours (Auto)', prefixIcon: Icon(Icons.hourglass_bottom_rounded)),
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                controller: graceCtrl,
+                                decoration: const InputDecoration(labelText: 'Grace Period (mins) *', prefixIcon: Icon(Icons.av_timer_rounded)),
+                                keyboardType: TextInputType.number,
+                                validator: (v) => (v == null || int.tryParse(v) == null) ? 'Required' : null,
                               ),
                             ),
-                            const SizedBox(width: 12),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+
+                        Row(
+                          children: [
                             Expanded(
                               child: TextFormField(
                                 controller: halfDayCtrl,
                                 decoration: const InputDecoration(labelText: 'Half Day Threshold (hrs) *', prefixIcon: Icon(Icons.hourglass_empty_rounded)),
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 validator: (v) => (v == null || double.tryParse(v) == null) ? 'Required' : null,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                initialValue: selectedStatus,
+                                decoration: const InputDecoration(labelText: 'Status *', prefixIcon: Icon(Icons.info_outline_rounded)),
+                                items: const [
+                                  DropdownMenuItem(value: 'active', child: Text('Active')),
+                                  DropdownMenuItem(value: 'suspended', child: Text('Suspended')),
+                                  DropdownMenuItem(value: 'archived', child: Text('Archived')),
+                                ],
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setModalState(() {
+                                      selectedStatus = val;
+                                    });
+                                  }
+                                },
                               ),
                             ),
                           ],
@@ -814,16 +985,7 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                           },
                           contentPadding: EdgeInsets.zero,
                         ),
-                        if (overtimeAllowed) ...[
-                          const SizedBox(height: 8),
-                          TextFormField(
-                            controller: otStartCtrl,
-                            decoration: const InputDecoration(labelText: 'Overtime Starts After Hours *', prefixIcon: Icon(Icons.more_time_rounded)),
-                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                            validator: (v) => (v == null || double.tryParse(v) == null) ? 'Required' : null,
-                          ),
-                        ],
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
                         const Align(
                           alignment: Alignment.centerLeft,
                           child: Text('Weekly Off Days', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF475569))),
@@ -847,23 +1009,6 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                               },
                             );
                           }).toList(),
-                        ),
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<String>(
-                          initialValue: selectedStatus,
-                          decoration: const InputDecoration(labelText: 'Status', prefixIcon: Icon(Icons.info_outline_rounded)),
-                          items: const [
-                            DropdownMenuItem(value: 'active', child: Text('Active')),
-                            DropdownMenuItem(value: 'suspended', child: Text('Suspended')),
-                            DropdownMenuItem(value: 'archived', child: Text('Archived (Soft Delete)')),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              setModalState(() {
-                                selectedStatus = val;
-                              });
-                            }
-                          },
                         ),
                       ],
                     ),
@@ -904,7 +1049,8 @@ class _ShiftManagementScreenState extends ConsumerState<ShiftManagementScreen> {
                               gracePeriodMinutes: int.parse(graceCtrl.text.trim()),
                               halfDayThresholdHours: double.parse(halfDayCtrl.text.trim()),
                               overtimeAllowed: overtimeAllowed,
-                              overtimeStartAfterHours: overtimeAllowed ? double.parse(otStartCtrl.text.trim()) : 0.0,
+                              overtimeStartAfterHours: calcResult.workingHours,
+                              otLimitHours: selectedOtLimit,
                               weeklyOffDays: selectedOffDays,
                               status: selectedStatus,
                               createdAt: existingShift?.createdAt ?? DateTime.now(),

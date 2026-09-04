@@ -10,6 +10,7 @@ import 'package:worktrack/features/company_admin/models/salary_revision_model.da
 import 'package:worktrack/features/company_admin/providers/company_admin_providers.dart';
 import 'package:worktrack/features/company_admin/widgets/company_admin/searchable_paginated_table.dart';
 import 'package:worktrack/shared/models/user_model.dart';
+import 'package:worktrack/shared/utils/app_formatter.dart';
 
 class SalaryStructuresScreen extends ConsumerStatefulWidget {
   const SalaryStructuresScreen({super.key});
@@ -368,8 +369,14 @@ class _SalaryStructureFormDialogState
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _descCtrl;
-  late final TextEditingController _grossFormulaCtrl;
-  late final TextEditingController _netFormulaCtrl;
+  late final TextEditingController _monthlySalaryCtrl;
+  late final TextEditingController _annualSalaryCtrl;
+  late final TextEditingController _bonusCtrl;
+  late final TextEditingController _incentiveCtrl;
+  late final FocusNode _monthlyFocusNode;
+  late final FocusNode _annualFocusNode;
+  bool _isSyncing = false;
+
   late final Map<String, TextEditingController> _componentCtrls;
   late List<SalaryComponentModel> _normalizedComponents;
   late SalaryComponentModel _basicComp;
@@ -428,8 +435,22 @@ class _SalaryStructureFormDialogState
     super.initState();
     _nameCtrl = TextEditingController(text: widget.existingStruct?.name ?? '');
     _descCtrl = TextEditingController(text: widget.existingStruct?.description ?? '');
-    _grossFormulaCtrl = TextEditingController(text: widget.existingStruct?.grossFormula ?? 'Basic Pay + Allowances');
-    _netFormulaCtrl = TextEditingController(text: widget.existingStruct?.netFormula ?? 'Gross - Deductions');
+    
+    final initialMonthly = widget.existingStruct?.monthlySalary ?? (widget.existingStruct?.basic ?? 15000.0);
+    final initialAnnual = widget.existingStruct?.annualSalary ?? (initialMonthly * 12);
+    final initialBonus = widget.existingStruct?.bonus ?? 0.0;
+    final initialIncentive = widget.existingStruct?.incentive ?? 0.0;
+
+    _monthlySalaryCtrl = TextEditingController(text: initialMonthly % 1 == 0 ? initialMonthly.toInt().toString() : initialMonthly.toStringAsFixed(2));
+    _annualSalaryCtrl = TextEditingController(text: initialAnnual % 1 == 0 ? initialAnnual.toInt().toString() : initialAnnual.toStringAsFixed(2));
+    _bonusCtrl = TextEditingController(text: initialBonus % 1 == 0 ? initialBonus.toInt().toString() : initialBonus.toStringAsFixed(2));
+    _incentiveCtrl = TextEditingController(text: initialIncentive % 1 == 0 ? initialIncentive.toInt().toString() : initialIncentive.toStringAsFixed(2));
+
+    _monthlyFocusNode = FocusNode();
+    _annualFocusNode = FocusNode();
+
+    _monthlySalaryCtrl.addListener(_onMonthlySalaryChanged);
+    _annualSalaryCtrl.addListener(_onAnnualSalaryChanged);
 
     _normalizedComponents = _buildNormalizedComponents(widget.components);
 
@@ -447,7 +468,7 @@ class _SalaryStructureFormDialogState
         if (struct.componentPercentages.containsKey(comp.componentId)) {
           initialValue = struct.componentPercentages[comp.componentId]!;
         } else if (comp.componentId == _basicComp.componentId) {
-          initialValue = struct.basic > 0 ? struct.basic : 15000.0;
+          initialValue = struct.basic > 0 ? struct.basic : initialMonthly;
         } else if (comp.calculationType == 'Percentage') {
           final rupeeVal = comp.componentType == 'Earning'
               ? (struct.earnings[comp.componentId] ?? 0.0)
@@ -462,7 +483,7 @@ class _SalaryStructureFormDialogState
         }
       } else {
         if (comp.componentId == _basicComp.componentId && comp.defaultValue == 0.0) {
-          initialValue = 15000.0;
+          initialValue = initialMonthly;
         }
       }
 
@@ -471,12 +492,44 @@ class _SalaryStructureFormDialogState
     }
   }
 
+  void _onMonthlySalaryChanged() {
+    if (_monthlyFocusNode.hasFocus && !_isSyncing) {
+      _isSyncing = true;
+      final monthly = double.tryParse(_monthlySalaryCtrl.text) ?? 0.0;
+      final annual = monthly * 12;
+      _annualSalaryCtrl.text = annual % 1 == 0 ? annual.toInt().toString() : annual.toStringAsFixed(2);
+      if (_componentCtrls.containsKey(_basicComp.componentId)) {
+        _componentCtrls[_basicComp.componentId]!.text = monthly % 1 == 0 ? monthly.toInt().toString() : monthly.toStringAsFixed(2);
+      }
+      _isSyncing = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _onAnnualSalaryChanged() {
+    if (_annualFocusNode.hasFocus && !_isSyncing) {
+      _isSyncing = true;
+      final annual = double.tryParse(_annualSalaryCtrl.text) ?? 0.0;
+      final monthly = annual / 12;
+      _monthlySalaryCtrl.text = monthly % 1 == 0 ? monthly.toInt().toString() : monthly.toStringAsFixed(2);
+      if (_componentCtrls.containsKey(_basicComp.componentId)) {
+        _componentCtrls[_basicComp.componentId]!.text = monthly % 1 == 0 ? monthly.toInt().toString() : monthly.toStringAsFixed(2);
+      }
+      _isSyncing = false;
+      if (mounted) setState(() {});
+    }
+  }
+
   @override
   void dispose() {
     _nameCtrl.dispose();
     _descCtrl.dispose();
-    _grossFormulaCtrl.dispose();
-    _netFormulaCtrl.dispose();
+    _monthlySalaryCtrl.dispose();
+    _annualSalaryCtrl.dispose();
+    _bonusCtrl.dispose();
+    _incentiveCtrl.dispose();
+    _monthlyFocusNode.dispose();
+    _annualFocusNode.dispose();
     for (final c in _componentCtrls.values) {
       c.dispose();
     }
@@ -484,6 +537,9 @@ class _SalaryStructureFormDialogState
   }
 
   double get _basicVal => double.tryParse(_componentCtrls[_basicComp.componentId]?.text ?? '0') ?? 0.0;
+  double get _bonusVal => double.tryParse(_bonusCtrl.text) ?? 0.0;
+  double get _incentivePctVal => double.tryParse(_incentiveCtrl.text) ?? 0.0;
+  double get _incentiveVal => _basicVal * (_incentivePctVal / 100.0);
 
   bool get _isEsiEligible => _basicVal <= 15000.0;
 
@@ -495,7 +551,6 @@ class _SalaryStructureFormDialogState
     final text = _componentCtrls[comp.componentId]?.text ?? '0';
     final val = double.tryParse(text) ?? 0.0;
 
-    // ESI Rule: Applicable only when Basic Pay <= 15,000
     if (comp.name.toLowerCase() == 'esi') {
       if (!_isEsiEligible) return 0.0;
       return _basicVal * (val / 100.0);
@@ -508,12 +563,17 @@ class _SalaryStructureFormDialogState
     return val;
   }
 
-  double get _totalEarnings {
+  double get _totalAllowances {
     double sum = 0.0;
     for (final comp in _normalizedComponents.where((c) => c.componentType == 'Earning')) {
+      if (comp.componentId == _basicComp.componentId) continue;
       sum += _getCompValue(comp);
     }
     return sum;
+  }
+
+  double get _totalEarnings {
+    return _basicVal + _totalAllowances + _incentiveVal + _bonusVal;
   }
 
   double get _totalDeductions {
@@ -601,25 +661,41 @@ class _SalaryStructureFormDialogState
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
-                          controller: _grossFormulaCtrl,
+                          controller: _monthlySalaryCtrl,
+                          focusNode: _monthlyFocusNode,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           decoration: const InputDecoration(
-                            labelText: 'Gross Formula',
-                            prefixIcon: Icon(Icons.calculate_outlined, color: Color(0xFF5B4CF0)),
+                            labelText: 'Monthly Salary (₹) *',
+                            prefixIcon: Icon(Icons.calendar_month_outlined, color: Color(0xFF5B4CF0)),
                             border: OutlineInputBorder(),
-                            helperText: 'e.g. Basic Pay + Allowances',
+                            helperText: 'e.g. ₹15,000',
                           ),
-                          style: const TextStyle(fontFamily: 'Outfit'),
+                          style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold),
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return 'Required';
+                            final num = double.tryParse(v);
+                            if (num == null || num < 0) return 'Invalid amount';
+                            return null;
+                          },
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
-                          controller: _netFormulaCtrl,
+                          controller: _annualSalaryCtrl,
+                          focusNode: _annualFocusNode,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           decoration: const InputDecoration(
-                            labelText: 'Net Formula',
-                            prefixIcon: Icon(Icons.calculate_outlined, color: Color(0xFF5B4CF0)),
+                            labelText: 'Annual Salary (₹) *',
+                            prefixIcon: Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF5B4CF0)),
                             border: OutlineInputBorder(),
-                            helperText: 'e.g. Gross - Deductions',
+                            helperText: 'Monthly × 12',
                           ),
-                          style: const TextStyle(fontFamily: 'Outfit'),
+                          style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold),
+                          validator: (v) {
+                            if (v == null || v.trim().isEmpty) return 'Required';
+                            final num = double.tryParse(v);
+                            if (num == null || num < 0) return 'Invalid amount';
+                            return null;
+                          },
                         ),
                       ] else ...[
                         Row(
@@ -656,27 +732,43 @@ class _SalaryStructureFormDialogState
                           children: [
                             Expanded(
                               child: TextFormField(
-                                controller: _grossFormulaCtrl,
+                                controller: _monthlySalaryCtrl,
+                                focusNode: _monthlyFocusNode,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 decoration: const InputDecoration(
-                                  labelText: 'Gross Formula',
-                                  prefixIcon: Icon(Icons.calculate_outlined, color: Color(0xFF5B4CF0)),
+                                  labelText: 'Monthly Salary (₹) *',
+                                  prefixIcon: Icon(Icons.calendar_month_outlined, color: Color(0xFF5B4CF0)),
                                   border: OutlineInputBorder(),
-                                  helperText: 'e.g. Basic Pay + Allowances',
+                                  helperText: 'e.g. ₹15,000',
                                 ),
-                                style: const TextStyle(fontFamily: 'Outfit'),
+                                style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) return 'Required';
+                                  final num = double.tryParse(v);
+                                  if (num == null || num < 0) return 'Invalid amount';
+                                  return null;
+                                },
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextFormField(
-                                controller: _netFormulaCtrl,
+                                controller: _annualSalaryCtrl,
+                                focusNode: _annualFocusNode,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 decoration: const InputDecoration(
-                                  labelText: 'Net Formula',
-                                  prefixIcon: Icon(Icons.calculate_outlined, color: Color(0xFF5B4CF0)),
+                                  labelText: 'Annual Salary (₹) *',
+                                  prefixIcon: Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF5B4CF0)),
                                   border: OutlineInputBorder(),
-                                  helperText: 'e.g. Gross - Deductions',
+                                  helperText: 'Monthly × 12',
                                 ),
-                                style: const TextStyle(fontFamily: 'Outfit'),
+                                style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold),
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) return 'Required';
+                                  final num = double.tryParse(v);
+                                  if (num == null || num < 0) return 'Invalid amount';
+                                  return null;
+                                },
                               ),
                             ),
                           ],
@@ -684,17 +776,66 @@ class _SalaryStructureFormDialogState
                       ],
                       const SizedBox(height: 20),
 
+                      _SectionHeader(title: 'Basic Salary', icon: Icons.payments_outlined, color: const Color(0xFF0EA5E9)),
+                      const SizedBox(height: 10),
+                      _ComponentRow(
+                        comp: _basicComp,
+                        controller: _componentCtrls[_basicComp.componentId]!,
+                        basicVal: basic,
+                        isBasicComp: true,
+                        isEsiEligible: _isEsiEligible,
+                        calculatedVal: basic,
+                        onChanged: () => setState(() {}),
+                      ),
+                      const SizedBox(height: 20),
+
                       _SectionHeader(title: 'Earnings Components', icon: Icons.trending_up_rounded, color: const Color(0xFF10B981)),
                       const SizedBox(height: 10),
-                      ...earnings.map((comp) => _ComponentRow(
+                      ...earnings.where((c) => c.componentId != _basicComp.componentId).map((comp) => _ComponentRow(
                         comp: comp,
                         controller: _componentCtrls[comp.componentId]!,
                         basicVal: basic,
-                        isBasicComp: comp.componentId == _basicComp.componentId,
+                        isBasicComp: false,
                         isEsiEligible: _isEsiEligible,
                         calculatedVal: _getCompValue(comp),
                         onChanged: () => setState(() {}),
                       )),
+                      const SizedBox(height: 20),
+
+                      _SectionHeader(title: 'Incentive & Bonus', icon: Icons.card_giftcard_rounded, color: const Color(0xFFF59E0B)),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _incentiveCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: InputDecoration(
+                                labelText: 'Incentive (%)',
+                                suffixText: '₹${AppFormatter.formatCurrency(_incentiveVal, includeSymbol: false)}',
+                                prefixIcon: const Icon(Icons.stars_outlined, color: Color(0xFFF59E0B)),
+                                border: const OutlineInputBorder(),
+                              ),
+                              style: const TextStyle(fontFamily: 'Outfit'),
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _bonusCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'Bonus Amount (₹)',
+                                prefixIcon: Icon(Icons.card_giftcard_outlined, color: Color(0xFFF59E0B)),
+                                border: OutlineInputBorder(),
+                              ),
+                              style: const TextStyle(fontFamily: 'Outfit'),
+                              onChanged: (_) => setState(() {}),
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 20),
 
                       _SectionHeader(title: 'Deductions Components', icon: Icons.trending_down_rounded, color: const Color(0xFFEF4444)),
@@ -712,8 +853,9 @@ class _SalaryStructureFormDialogState
 
                       _SalarySummaryCard(
                         basic: basic,
-                        grossFormula: _grossFormulaCtrl.text,
-                        netFormula: _netFormulaCtrl.text,
+                        totalAllowances: _totalAllowances,
+                        incentive: _incentiveVal,
+                        bonus: _bonusVal,
                         totalEarnings: gross,
                         totalDeductions: _totalDeductions,
                         netSalary: net,
@@ -780,17 +922,26 @@ class _SalaryStructureFormDialogState
       }
     }
 
+    final monthlyVal = double.tryParse(_monthlySalaryCtrl.text) ?? basicVal;
+    final annualVal = double.tryParse(_annualSalaryCtrl.text) ?? (monthlyVal * 12);
+    final bonusVal = _bonusVal;
+    final incentiveVal = _incentivePctVal;
+
     final struct = SalaryStructureModel(
       structureId: widget.existingStruct?.structureId ?? const Uuid().v4(),
       companyId: user.companyId,
       name: _nameCtrl.text.trim(),
       description: _descCtrl.text.trim(),
+      monthlySalary: monthlyVal,
+      annualSalary: annualVal,
       basic: basicVal,
+      bonus: bonusVal,
+      incentive: incentiveVal,
       earnings: earningsMap,
       deductions: deductionsMap,
       componentPercentages: percentagesMap,
-      grossFormula: _grossFormulaCtrl.text.trim(),
-      netFormula: _netFormulaCtrl.text.trim(),
+      grossFormula: 'Basic + Allowances + Incentive + Bonus',
+      netFormula: 'Gross - Deductions',
       status: widget.existingStruct?.status ?? 'active',
       createdAt: widget.existingStruct?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
@@ -1629,8 +1780,9 @@ class _ComponentRow extends StatelessWidget {
 
 class _SalarySummaryCard extends StatelessWidget {
   final double basic;
-  final String grossFormula;
-  final String netFormula;
+  final double totalAllowances;
+  final double incentive;
+  final double bonus;
   final double totalEarnings;
   final double totalDeductions;
   final double netSalary;
@@ -1638,8 +1790,9 @@ class _SalarySummaryCard extends StatelessWidget {
 
   const _SalarySummaryCard({
     required this.basic,
-    required this.grossFormula,
-    required this.netFormula,
+    required this.totalAllowances,
+    required this.incentive,
+    required this.bonus,
     required this.totalEarnings,
     required this.totalDeductions,
     required this.netSalary,
@@ -1649,7 +1802,6 @@ class _SalarySummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final currencyFmt = NumberFormat('#,##,##0');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1665,7 +1817,7 @@ class _SalarySummaryCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Structure Preview Summary', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: isDark ? Colors.white : const Color(0xFF0F172A), fontFamily: 'Outfit')),
+              Text('Salary Summary', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isDark ? Colors.white : const Color(0xFF0F172A), fontFamily: 'Outfit')),
               if (!isEsiEligible)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1681,32 +1833,60 @@ class _SalarySummaryCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Basic Pay:', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit')),
-              Text('₹${currencyFmt.format(basic.round())}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0EA5E9), fontFamily: 'Outfit')),
+              Text('BASIC SALARY:', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit')),
+              Text(AppFormatter.formatCurrency(basic), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0EA5E9), fontFamily: 'Outfit')),
             ],
           ),
           const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Total Earnings (Gross):', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Outfit')),
-              Text('₹${currencyFmt.format(totalEarnings.round())}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF10B981), fontFamily: 'Outfit')),
+              Text('TOTAL ALLOWANCES:', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit')),
+              Text(AppFormatter.formatCurrency(totalAllowances), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF10B981), fontFamily: 'Outfit')),
+            ],
+          ),
+          if (incentive > 0) ...[
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('INCENTIVE:', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit')),
+                Text(AppFormatter.formatCurrency(incentive), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B), fontFamily: 'Outfit')),
+              ],
+            ),
+          ],
+          if (bonus > 0) ...[
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('BONUS:', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontFamily: 'Outfit')),
+                Text(AppFormatter.formatCurrency(bonus), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B), fontFamily: 'Outfit')),
+              ],
+            ),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('GROSS SALARY:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF10B981), fontFamily: 'Outfit')),
+              Text(AppFormatter.formatCurrency(totalEarnings), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF10B981), fontFamily: 'Outfit')),
             ],
           ),
           const SizedBox(height: 6),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Total Deductions:', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Outfit')),
-              Text('₹${currencyFmt.format(totalDeductions.round())}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFEF4444), fontFamily: 'Outfit')),
+              const Text('TOTAL DEDUCTIONS:', style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontFamily: 'Outfit')),
+              Text(AppFormatter.formatCurrency(totalDeductions), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFEF4444), fontFamily: 'Outfit')),
             ],
           ),
           const Divider(height: 16, color: Color(0xFFF1F5F9)),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Estimated Net Take Home:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A), fontFamily: 'Outfit')),
-              Text('₹${currencyFmt.format(netSalary.round())}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0), fontFamily: 'Outfit')),
+              const Text('NET SALARY:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A), fontFamily: 'Outfit')),
+              Text(AppFormatter.formatCurrency(netSalary), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0), fontFamily: 'Outfit')),
             ],
           ),
         ],

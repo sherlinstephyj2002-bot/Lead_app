@@ -14,8 +14,20 @@ class SalaryStructureModel {
 
   final String description;
 
+  /// Monthly salary target
+  final double monthlySalary;
+
+  /// Annual salary target (monthlySalary * 12)
+  final double annualSalary;
+
   /// Basic salary amount
   final double basic;
+
+  /// Dedicated bonus amount
+  final double bonus;
+
+  /// Dedicated incentive amount
+  final double incentive;
 
   /// Flat allowances map: componentId -> amount
   final Map<String, double> earnings;
@@ -41,11 +53,15 @@ class SalaryStructureModel {
     required this.companyId,
     required this.name,
     this.description = '',
+    this.monthlySalary = 0.0,
+    this.annualSalary = 0.0,
     this.basic = 0.0,
+    this.bonus = 0.0,
+    this.incentive = 0.0,
     required this.earnings,
     required this.deductions,
     this.componentPercentages = const {},
-    this.grossFormula = 'Basic + Allowances',
+    this.grossFormula = 'Basic + Allowances + Incentive + Bonus',
     this.netFormula = 'Gross - Deductions',
     this.status = 'active',
     required this.createdAt,
@@ -56,15 +72,19 @@ class SalaryStructureModel {
   double get totalAllowances {
     double sum = 0.0;
     for (final entry in earnings.entries) {
+      if (entry.key.toLowerCase().contains('basic')) continue;
       sum += entry.value;
     }
-    // Subtract basic from earnings sum to get pure allowances
-    return sum - basic;
+    return sum;
   }
 
-  /// Computed gross = basic + all earnings
+  /// Computed gross = basic + allowances + incentive + bonus
   double get grossSalary {
-    return earnings.values.fold(0.0, (prev, e) => prev + e);
+    final earningsSum = earnings.values.fold(0.0, (prev, e) => prev + e);
+    // If earnings map doesn't already contain basic, add basic
+    final hasBasicKey = earnings.keys.any((k) => k.toLowerCase().contains('basic'));
+    final totalBase = hasBasicKey ? earningsSum : basic + earningsSum;
+    return totalBase + bonus + incentive;
   }
 
   /// Computed total deductions
@@ -82,12 +102,20 @@ class SalaryStructureModel {
       return DateTime.parse(v.toString());
     }
 
+    final basicVal = (map['basic'] as num?)?.toDouble() ?? 0.0;
+    final monthlyVal = (map['monthlySalary'] as num?)?.toDouble() ?? (basicVal > 0 ? basicVal : 0.0);
+    final annualVal = (map['annualSalary'] as num?)?.toDouble() ?? (monthlyVal * 12);
+
     return SalaryStructureModel(
       structureId: map['structureId'] ?? '',
       companyId: map['companyId'] ?? '',
       name: map['name'] ?? '',
       description: map['description'] ?? '',
-      basic: (map['basic'] as num?)?.toDouble() ?? 0.0,
+      monthlySalary: monthlyVal,
+      annualSalary: annualVal,
+      basic: basicVal,
+      bonus: (map['bonus'] as num?)?.toDouble() ?? 0.0,
+      incentive: (map['incentive'] as num?)?.toDouble() ?? 0.0,
       earnings: (map['earnings'] as Map<String, dynamic>?)
               ?.map((k, v) => MapEntry(k, (v as num).toDouble())) ??
           {},
@@ -97,7 +125,7 @@ class SalaryStructureModel {
       componentPercentages: (map['componentPercentages'] as Map<String, dynamic>?)
               ?.map((k, v) => MapEntry(k, (v as num).toDouble())) ??
           {},
-      grossFormula: map['grossFormula'] ?? 'Basic + Allowances',
+      grossFormula: map['grossFormula'] ?? 'Basic + Allowances + Incentive + Bonus',
       netFormula: map['netFormula'] ?? 'Gross - Deductions',
       status: map['status'] ?? 'active',
       createdAt: parseDate(map['createdAt']),
@@ -111,7 +139,11 @@ class SalaryStructureModel {
       'companyId': companyId,
       'name': name,
       'description': description,
+      'monthlySalary': monthlySalary,
+      'annualSalary': annualSalary,
       'basic': basic,
+      'bonus': bonus,
+      'incentive': incentive,
       'earnings': earnings,
       'deductions': deductions,
       'componentPercentages': componentPercentages,
@@ -128,7 +160,11 @@ class SalaryStructureModel {
     String? companyId,
     String? name,
     String? description,
+    double? monthlySalary,
+    double? annualSalary,
     double? basic,
+    double? bonus,
+    double? incentive,
     Map<String, double>? earnings,
     Map<String, double>? deductions,
     Map<String, double>? componentPercentages,
@@ -143,7 +179,11 @@ class SalaryStructureModel {
       companyId: companyId ?? this.companyId,
       name: name ?? this.name,
       description: description ?? this.description,
+      monthlySalary: monthlySalary ?? this.monthlySalary,
+      annualSalary: annualSalary ?? this.annualSalary,
       basic: basic ?? this.basic,
+      bonus: bonus ?? this.bonus,
+      incentive: incentive ?? this.incentive,
       earnings: earnings ?? this.earnings,
       deductions: deductions ?? this.deductions,
       componentPercentages: componentPercentages ?? this.componentPercentages,

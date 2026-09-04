@@ -10,11 +10,15 @@ import '../../../shared/models/company_model.dart';
 import '../../../shared/models/department_model.dart';
 import '../../company_admin/models/branch_model.dart';
 import '../../company_admin/models/designation_model.dart';
+import '../../company_admin/models/role_model.dart';
 import '../../company_admin/models/shift_model.dart';
 import '../../company_admin/models/holiday_model.dart';
 import '../../company_admin/providers/company_admin_providers.dart';
 import '../../../constants/feature_flags.dart';
 import '../../../shared/utils/shift_duration_calculator.dart';
+import '../../../shared/widgets/multi_select_department_dropdown.dart';
+import '../../../shared/utils/app_notification.dart';
+import '../../../shared/widgets/searchable_dropdown.dart';
 
 class OnboardingWizardScreen extends ConsumerStatefulWidget {
   const OnboardingWizardScreen({super.key});
@@ -51,12 +55,13 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
   final _cityController = TextEditingController();
   String? _logoUrl;
 
-  String _timeZone = 'UTC+05:30 (India)';
+  String _timeZone = 'UTC+05:30 — India Standard Time';
   String _currency = 'INR';
   List<String> _selectedWorkingDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
   final List<String> _commonCurrencies = ['INR', 'USD', 'EUR', 'GBP', 'AUD', 'CAD', 'SGD', 'AED', 'JPY', 'CNY'];
   final List<String> _commonTimeZones = [
+    'UTC+05:30 — India Standard Time',
     'UTC+05:30 (India)',
     'UTC+00:00 (GMT/UTC)',
     'UTC-05:00 (EST)',
@@ -87,8 +92,12 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
     _stateController.text = company.state;
     _cityController.text = company.city;
     _logoUrl = company.logoUrl;
-    _timeZone = company.timeZone.isNotEmpty ? company.timeZone : 'UTC+05:30 (India)';
-    _currency = company.currency.isNotEmpty ? company.currency : 'INR';
+    final rawTz = company.timeZone.isNotEmpty ? company.timeZone : 'UTC+05:30 — India Standard Time';
+    _timeZone = _commonTimeZones.contains(rawTz)
+        ? rawTz
+        : (_commonTimeZones.firstWhere((tz) => tz.contains('05:30') || tz.contains('India'), orElse: () => _commonTimeZones.first));
+    final rawCurr = company.currency.isNotEmpty ? company.currency : 'INR';
+    _currency = _commonCurrencies.contains(rawCurr) ? rawCurr : _commonCurrencies.first;
     _selectedWorkingDays = List<String>.from(company.workingDays);
     final available = _availableSteps;
     int dbStep = company.setupWizardStep;
@@ -289,14 +298,11 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
 
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    if (isError) {
+      AppNotification.showError(context, message);
+    } else {
+      AppNotification.showSuccess(context, message);
+    }
   }
 
   @override
@@ -633,6 +639,18 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
     final descCtrl = TextEditingController(text: existingRole != null ? existingRole['description'] : '');
     final formKey = GlobalKey<FormState>();
 
+    final deptsAsync = ref.read(adminDepartmentsProvider);
+    final desigsAsync = ref.read(adminDesignationsProvider);
+
+    final depts = (deptsAsync.value ?? []).where((d) => d.status == 'active').toList();
+    final allDesigs = (desigsAsync.value ?? []).where((d) => d.status == 'active').toList();
+
+    final rawDeptIds = existingRole != null ? (existingRole['departmentIds'] as List? ?? [existingRole['departmentId']]) : [];
+    final rawDesigIds = existingRole != null ? (existingRole['designationIds'] as List? ?? [existingRole['designationId']]) : [];
+
+    List<DepartmentModel> selectedDepts = depts.where((d) => rawDeptIds.contains(d.departmentId)).toList();
+    List<DesignationModel> selectedDesigs = allDesigs.where((d) => rawDesigIds.contains(d.designationId)).toList();
+
     // Modules permission map
     final Map<String, List<Map<String, String>>> modules = {
       'EMPLOYEES': [
@@ -700,7 +718,6 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
           .get();
       selectedPermissions = permsSnap.docs.map((d) => d.data()['permissionId'] as String).toList();
     } else {
-      // Default basic view permissions for new role
       selectedPermissions = ['employee_view', 'attendance_view', 'leave_apply'];
     }
 
@@ -711,6 +728,15 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) {
+          final availableDesigs = selectedDepts.isEmpty
+              ? <DesignationModel>[]
+              : allDesigs.where((desig) {
+                  return selectedDepts.any((dept) =>
+                      desig.applicableDepartmentIds.contains(dept.departmentId) ||
+                      desig.departmentId == dept.departmentId ||
+                      desig.applicableDepartmentIds.isEmpty);
+                }).toList();
+
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: Text(isEdit ? 'Edit Custom Role' : 'Create Custom Role', style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
@@ -723,15 +749,53 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextFormField(
-                        controller: nameCtrl,
-                        decoration: const InputDecoration(labelText: 'Role Name *', hintText: 'e.g. Tech Lead, Senior Analyst, Sales Manager'),
-                        validator: (v) => v == null || v.trim().isEmpty ? 'Role Name is required' : null,
+                      const Text(
+                        'Organizational Hierarchy',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF5B4CF0)),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // STEP 1: Select Department(s)
+                      SearchableMultiSelectDropdown<DepartmentModel>(
+                        label: 'Departments *',
+                        hint: 'Select Department(s)',
+                        icon: Icons.business_center_rounded,
+                        items: depts,
+                        selectedItems: selectedDepts,
+                        itemAsString: (d) => d.departmentName,
+                        itemAsSubTitle: (d) => d.departmentCode,
+                        onChanged: (val) {
+                          setDialogState(() {
+                            selectedDepts = val;
+                            final validDesigIds = availableDesigs.map((d) => d.designationId).toSet();
+                            selectedDesigs.removeWhere((d) => !validDesigIds.contains(d.designationId));
+                          });
+                        },
                       ),
                       const SizedBox(height: 12),
+
+                      // STEP 2: Select Designation(s)
+                      SearchableMultiSelectDropdown<DesignationModel>(
+                        label: 'Designations *',
+                        hint: selectedDepts.isEmpty ? 'Select Department first' : 'Select Designation(s)',
+                        icon: Icons.badge_outlined,
+                        enabled: selectedDepts.isNotEmpty,
+                        items: availableDesigs,
+                        selectedItems: selectedDesigs,
+                        itemAsString: (d) => d.designationName,
+                        onChanged: (val) {
+                          setDialogState(() {
+                            selectedDesigs = val;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+
+                      // STEP 3: Role Name
                       TextFormField(
-                        controller: descCtrl,
-                        decoration: const InputDecoration(labelText: 'Role Description', hintText: 'Describe duties & responsibilities'),
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(labelText: 'Role Name *', hintText: 'e.g. Field Technician, Sales Manager'),
+                        validator: (v) => v == null || v.trim().isEmpty ? 'Role Name is required' : null,
                       ),
                       const SizedBox(height: 16),
                       const Text('Permissions by Module:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Outfit', color: Color(0xFF5B4CF0))),
@@ -812,9 +876,19 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                 onPressed: () async {
+                  if (selectedDepts.isEmpty) {
+                    _showSnackBar('Please select at least one Department.', isError: true);
+                    return;
+                  }
+                  if (selectedDesigs.isEmpty) {
+                    _showSnackBar('Please select at least one Designation.', isError: true);
+                    return;
+                  }
                   if (formKey.currentState!.validate()) {
                     Navigator.pop(ctx);
-                    await _saveWizardRole(companyId, roleId, nameCtrl.text.trim(), descCtrl.text.trim(), selectedPermissions);
+                    final deptIds = selectedDepts.map((d) => d.departmentId).toList();
+                    final desigIds = selectedDesigs.map((d) => d.designationId).toList();
+                    await _saveWizardRole(companyId, roleId, nameCtrl.text.trim(), deptIds, desigIds, selectedPermissions);
                   }
                 },
                 child: const Text('Save Role', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
@@ -826,17 +900,30 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
     );
   }
 
-  Future<void> _saveWizardRole(String companyId, String roleId, String name, String description, List<String> permissions) async {
+  Future<void> _saveWizardRole(String companyId, String roleId, String name, List<String> deptIds, List<String> desigIds, List<String> permissions) async {
     try {
       final db = FirebaseFirestore.instance;
       final batch = db.batch();
+
+      final orgAssignments = <Map<String, String>>[];
+      for (final dId in deptIds) {
+        for (final dsId in desigIds) {
+          orgAssignments.add({'departmentId': dId, 'designationId': dsId});
+        }
+      }
 
       batch.set(db.collection('roles').doc(roleId), {
         'roleId': roleId,
         'companyId': companyId,
         'roleName': name,
-        'description': description,
+        'departmentId': deptIds.isNotEmpty ? deptIds.first : '',
+        'designationId': desigIds.isNotEmpty ? desigIds.first : '',
+        'departmentIds': deptIds,
+        'designationIds': desigIds,
+        'organizationalAssignments': orgAssignments,
+        'description': '',
         'isSystemRole': false,
+        'status': 'active',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -993,7 +1080,7 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _timeZone,
+                value: _commonTimeZones.contains(_timeZone) ? _timeZone : _commonTimeZones.first,
                 decoration: const InputDecoration(
                   labelText: 'Time Zone *',
                   prefixIcon: Icon(Icons.public_rounded),
@@ -1005,7 +1092,7 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: _currency,
+                value: _commonCurrencies.contains(_currency) ? _currency : _commonCurrencies.first,
                 decoration: const InputDecoration(
                   labelText: 'Currency *',
                   prefixIcon: Icon(Icons.monetization_on_outlined),
@@ -1181,7 +1268,6 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                       child: Icon(Icons.corporate_fare, color: Colors.orange),
                     ),
                     title: Text(d.departmentName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: Text(d.description.isNotEmpty ? d.description : 'No description provided.', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1283,8 +1369,8 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                     title: Text(desig.designationName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                     subtitle: Text(
                       FeatureFlags.enableDesignationLevels
-                          ? 'Dept: $deptName • Level: ${desig.designationLevel}'
-                          : 'Dept: $deptName',
+                          ? 'Department: $deptName • Level: ${desig.designationLevel}'
+                          : 'Department: $deptName',
                       style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                     ),
                     trailing: Row(
@@ -1316,6 +1402,7 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
   // STEP 5 - Work Shifts Management List
   Widget _buildStep5Shifts(CompanyModel company) {
     final shiftsAsync = ref.watch(adminShiftsProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Column(
       children: [
@@ -1350,39 +1437,162 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: activeShifts.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final s = activeShifts[index];
-                return Card(
-                  elevation: 0,
-                  color: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                final isDarkCard = Theme.of(context).brightness == Brightness.dark;
+                final titleColor = isDarkCard ? Colors.white : const Color(0xFF1E293B);
+                final borderCol = isDarkCard ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isDarkCard ? Theme.of(context).cardColor : Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: borderCol),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.02),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: Color(0xFFF5F3FF),
-                      child: Icon(Icons.access_time_rounded, color: Colors.purple),
-                    ),
-                    title: Text(s.shiftName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    subtitle: Text(
-                      '${s.startTime} - ${s.endTime} (${s.workingHours} hrs) • Break: ${s.breakDuration} mins',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.orange),
-                          onPressed: () => _showShiftFormDialog(company.companyId, shift: s),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF5B4CF0).withValues(alpha: isDarkCard ? 0.2 : 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.schedule_rounded, color: Color(0xFF5B4CF0), size: 18),
+                              ),
+                              const SizedBox(width: 10),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(s.shiftName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: titleColor)),
+                                  Text(s.shiftCode, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isDarkCard ? const Color(0xFF94A3B8) : const Color(0xFF64748B))),
+                                ],
+                              ),
+                            ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 18, color: Colors.orange),
+                                onPressed: () => _showShiftFormDialog(company.companyId, shift: s),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                                onPressed: () => _deleteShiftConfirm(s),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Details: Timings, Break, Working Hours, OT Limit
+                      Wrap(
+                        spacing: 16,
+                        runSpacing: 8,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF6366F1)),
+                              const SizedBox(width: 4),
+                              Text('${s.startTime} – ${s.endTime}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: titleColor)),
+                            ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.coffee_rounded, size: 14, color: Color(0xFFF59E0B)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Break: ${s.breakDurationMinutes >= 60 && s.breakDurationMinutes % 60 == 0 ? "${s.breakDurationMinutes ~/ 60} ${s.breakDurationMinutes ~/ 60 == 1 ? "Hour" : "Hours"}" : "${s.breakDurationMinutes} Mins"}',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: isDarkCard ? const Color(0xFFCBD5E1) : const Color(0xFF475569)),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.timer_rounded, size: 14, color: Color(0xFF10B981)),
+                              const SizedBox(width: 4),
+                              Text('Working Hours: ${s.workingHours.toStringAsFixed(2).replaceAll(RegExp(r'\.00$'), '')} Hours', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF10B981))),
+                            ],
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.add_circle_outline_rounded, size: 14, color: Color(0xFFEC4899)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'OT Limit: ${s.overtimeAllowed ? ShiftDurationCalculator.formatHoursShort(s.otLimitHours) : "Disabled"}',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: s.overtimeAllowed ? const Color(0xFFEC4899) : const Color(0xFF94A3B8)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Breakdown banner
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isDarkCard ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: borderCol),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
-                          onPressed: () => _deleteShiftConfirm(s),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Regular Hours', style: TextStyle(fontSize: 9, color: isDarkCard ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontWeight: FontWeight.w500)),
+                                const SizedBox(height: 1),
+                                Text(ShiftDurationCalculator.formatHoursShort(s.workingHours), style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: titleColor)),
+                              ],
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Maximum OT', style: TextStyle(fontSize: 9, color: isDarkCard ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontWeight: FontWeight.w500)),
+                                const SizedBox(height: 1),
+                                Text(
+                                  s.overtimeAllowed ? ShiftDurationCalculator.formatHoursShort(s.otLimitHours) : 'Disabled',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: s.overtimeAllowed ? const Color(0xFFEC4899) : const Color(0xFF94A3B8)),
+                                ),
+                              ],
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text('Max Total Working Time', style: TextStyle(fontSize: 9, color: isDarkCard ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 1),
+                                Text(
+                                  ShiftDurationCalculator.formatHoursShort(s.maxTotalWorkingTimeHours),
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0)),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 );
               },
@@ -1887,20 +2097,14 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
               children: [
                 TextFormField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Department Name *'),
+                  decoration: const InputDecoration(labelText: 'Department Name *', hintText: 'e.g. Sales, Engineering'),
                   validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: codeCtrl,
-                  decoration: const InputDecoration(labelText: 'Department Code *'),
+                  decoration: const InputDecoration(labelText: 'Department Code *', hintText: 'e.g. SLS, ENG'),
                   validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
-                ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  controller: descCtrl,
-                  decoration: const InputDecoration(labelText: 'Description'),
-                  maxLines: 2,
                 ),
               ],
             ),
@@ -1910,22 +2114,38 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
             ElevatedButton(
               onPressed: () async {
                 if (formKey.currentState!.validate()) {
+                  final depts = ref.read(adminDepartmentsProvider).value ?? [];
+                  final inputName = nameCtrl.text.trim().toLowerCase();
+                  final inputCode = codeCtrl.text.trim().toLowerCase();
+
+                  final duplicateName = depts.any((d) => d.departmentId != department?.departmentId && d.departmentName.toLowerCase() == inputName);
+                  if (duplicateName) {
+                    _showSnackBar('Department with this name already exists.', isError: true);
+                    return;
+                  }
+
+                  final duplicateCode = depts.any((d) => d.departmentId != department?.departmentId && d.departmentCode.toLowerCase() == inputCode);
+                  if (duplicateCode) {
+                    _showSnackBar('Department with this code already exists.', isError: true);
+                    return;
+                  }
+
                   final adminUser = ref.read(authProvider).user;
                   final newDept = DepartmentModel(
                     departmentId: department?.departmentId ?? const Uuid().v4(),
                     companyId: companyId,
                     departmentName: nameCtrl.text.trim(),
                     departmentCode: codeCtrl.text.trim().toUpperCase(),
-                    description: descCtrl.text.trim(),
+                    description: '',
                     status: department?.status ?? 'active',
                     createdAt: department?.createdAt ?? DateTime.now(),
                     updatedAt: DateTime.now(),
                     createdBy: department?.createdBy ?? adminUser?.email ?? 'Admin',
                   );
 
-                  final success = await ref.read(adminDepartmentsProvider.notifier).saveDepartment(newDept);
-                  if (!success) {
-                    _showSnackBar('Department name already exists in this company.', isError: true);
+                  final result = await ref.read(adminDepartmentsProvider.notifier).saveDepartment(newDept);
+                  if (result != 'success') {
+                    _showSnackBar(result, isError: true);
                   } else {
                     Navigator.pop(ctx);
                     _showSnackBar('Department saved successfully.');
@@ -1958,21 +2178,26 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
     );
 
     if (confirm == true) {
-      await ref.read(adminDepartmentsProvider.notifier).deleteDepartment(department.departmentId);
-      _showSnackBar('Department deleted.');
+      ref.read(adminDepartmentsProvider.notifier).deleteDepartment(department.departmentId);
     }
   }
 
   // ==========================================
-  // DESIGNATION MODAL SHEET FORM
+  // DESIGNATION CONFIGURATION MODAL SHEET FORM
   // ==========================================
   void _showDesignationFormDialog(String companyId, List<DepartmentModel> depts, {DesignationModel? designation}) {
     final isEdit = designation != null;
+    final nameCtrl = TextEditingController(text: designation?.designationName ?? '');
+    final levelCtrl = TextEditingController(text: '${designation?.designationLevel ?? 1}');
     final formKey = GlobalKey<FormState>();
-    final nameCtrl = TextEditingController(text: designation?.designationName);
-    final levelCtrl = TextEditingController(text: designation != null ? '${designation.designationLevel}' : '1');
-    final descCtrl = TextEditingController(text: designation?.description);
-    String? selectedDeptId = designation?.departmentId ?? (depts.isNotEmpty ? depts.first.departmentId : null);
+
+    bool canManageDepts = designation?.canManageDepartments ?? (designation?.isManagerial ?? false);
+
+    final Set<String> selectedDeptIds = Set<String>.from(
+      designation?.managedDepartmentIds.isNotEmpty == true
+          ? designation!.managedDepartmentIds
+          : (designation?.departmentId.isNotEmpty == true ? [designation!.departmentId] : []),
+    );
 
     showDialog(
       context: context,
@@ -1980,52 +2205,72 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
       builder: (ctx) {
         return StatefulBuilder(
           builder: (dialogCtx, setDialogState) {
+            final count = selectedDeptIds.length;
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text(isEdit ? 'Edit Designation' : 'Add Designation', style: const TextStyle(fontWeight: FontWeight.bold)),
-              content: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        controller: nameCtrl,
-                        decoration: const InputDecoration(labelText: 'Designation Name *'),
-                        validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
-                      ),
-                      if (FeatureFlags.enableDesignationLevels) ...[
-                        const SizedBox(height: 8),
+              content: SizedBox(
+                width: 440,
+                child: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         TextFormField(
-                          controller: levelCtrl,
-                          decoration: const InputDecoration(labelText: 'Hierarchy Level (1-10) *'),
-                          keyboardType: TextInputType.number,
-                          validator: (v) {
-                            if (!FeatureFlags.enableDesignationLevels) return null;
-                            if (v == null || v.isEmpty) return 'Required';
-                            final val = int.tryParse(v);
-                            if (val == null || val < 1) return 'Must be positive integer';
-                            return null;
+                          controller: nameCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Designation Name *',
+                            hintText: 'e.g. Manager, Team Lead, Executive',
+                          ),
+                          validator: (v) => v == null || v.trim().isEmpty ? 'Designation Name is required' : null,
+                        ),
+                        if (FeatureFlags.enableDesignationLevels) ...[
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: levelCtrl,
+                            decoration: const InputDecoration(labelText: 'Hierarchy Level (1-10) *'),
+                            keyboardType: TextInputType.number,
+                            validator: (v) {
+                              if (!FeatureFlags.enableDesignationLevels) return null;
+                              if (v == null || v.isEmpty) return 'Required';
+                              final val = int.tryParse(v);
+                              if (val == null || val < 1) return 'Must be positive integer';
+                              return null;
+                            },
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        CheckboxListTile(
+                          value: canManageDepts,
+                          dense: true,
+                          title: const Text('Can manage departments', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                          subtitle: const Text('Grant management responsibility for employees assigned this designation.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          activeColor: const Color(0xFF4F46E5),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          contentPadding: EdgeInsets.zero,
+                          onChanged: (val) {
+                            setDialogState(() {
+                              canManageDepts = val ?? false;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        MultiSelectDepartmentDropdown(
+                          departments: depts,
+                          selectedDepartmentIds: selectedDeptIds.toList(),
+                          label: 'Associated Departments *',
+                          hint: 'Select departments for this designation',
+                          onChanged: (newIds) {
+                            setDialogState(() {
+                              selectedDeptIds.clear();
+                              selectedDeptIds.addAll(newIds);
+                            });
                           },
                         ),
                       ],
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: selectedDeptId,
-                        decoration: const InputDecoration(labelText: 'Department *'),
-                        items: depts.map((d) => DropdownMenuItem(value: d.departmentId, child: Text(d.departmentName))).toList(),
-                        onChanged: (val) {
-                          if (val != null) setDialogState(() => selectedDeptId = val);
-                        },
-                        validator: (v) => v == null ? 'Required' : null,
-                      ),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        controller: descCtrl,
-                        decoration: const InputDecoration(labelText: 'Description'),
-                        maxLines: 2,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -2033,14 +2278,19 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                 TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
                 ElevatedButton(
                   onPressed: () async {
-                    if (formKey.currentState!.validate() && selectedDeptId != null) {
+                    if (formKey.currentState!.validate()) {
+                      final selectedList = selectedDeptIds.toList();
+                      final primaryDeptId = selectedList.isNotEmpty ? selectedList.first : '';
+
                       final newDesig = DesignationModel(
                         designationId: designation?.designationId ?? const Uuid().v4(),
                         companyId: companyId,
                         designationName: nameCtrl.text.trim(),
-                        designationLevel: int.parse(levelCtrl.text),
-                        departmentId: selectedDeptId!,
-                        description: descCtrl.text.trim(),
+                        designationLevel: int.tryParse(levelCtrl.text) ?? 1,
+                        departmentId: primaryDeptId,
+                        managedDepartmentIds: selectedList,
+                        canManageDepartments: canManageDepts,
+                        description: '',
                         status: designation?.status ?? 'active',
                         createdAt: designation?.createdAt ?? DateTime.now(),
                         updatedAt: DateTime.now(),
@@ -2048,10 +2298,10 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
 
                       final success = await ref.read(adminDesignationsProvider.notifier).saveDesignation(newDesig);
                       if (!success) {
-                        _showSnackBar('Designation name already exists in this company.', isError: true);
+                        _showSnackBar('Designation "${nameCtrl.text.trim()}" already exists for this company.', isError: true);
                       } else {
                         Navigator.pop(ctx);
-                        _showSnackBar('Designation saved.');
+                        _showSnackBar('Designation saved successfully.');
                       }
                     }
                   },
@@ -2100,8 +2350,9 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
     final breakCtrl = TextEditingController(text: shift != null ? '${shift.breakDuration}' : '60');
     final hoursCtrl = TextEditingController(text: shift != null ? '${shift.workingHours}' : '8.0');
     final lateCtrl = TextEditingController(text: shift != null ? '${shift.lateToleranceMinutes}' : '15');
-    final earlyCtrl = TextEditingController(text: shift != null ? '${shift.earlyExitToleranceMinutes}' : '15');
-    bool overtimeEligible = shift?.overtimeEligible ?? false;
+    
+    double selectedOtLimit = shift?.otLimitHours ?? 2.0;
+    bool overtimeEligible = shift?.overtimeEligible ?? true;
 
     ShiftDurationResult calcResult = ShiftDurationCalculator.calculateShiftDuration(
       startTimeStr: startCtrl.text.trim(),
@@ -2149,7 +2400,7 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                       children: [
                         TextFormField(
                           controller: nameCtrl,
-                          decoration: const InputDecoration(labelText: 'Shift Name *'),
+                          decoration: const InputDecoration(labelText: 'Shift Name *', hintText: 'e.g. General Shift, Morning Shift, Night Shift'),
                           validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
                         ),
                         const SizedBox(height: 8),
@@ -2243,9 +2494,9 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
 
-                        // Shift Summary Card
+                        // Working Hours Summary Box
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
@@ -2259,32 +2510,116 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                                   : (isDark ? const Color(0xFF991B1B) : const Color(0xFFFCA5A5)),
                             ),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              Row(
                                 children: [
-                                  Text('Total Shift', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
-                                  const SizedBox(height: 2),
-                                  Text(calcResult.formattedTotalDuration, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
+                                  Icon(
+                                    calcResult.isValid ? Icons.auto_awesome_rounded : Icons.warning_amber_rounded,
+                                    size: 16,
+                                    color: calcResult.isValid ? const Color(0xFF4F46E5) : Colors.red,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    calcResult.isValid ? 'WORKING HOURS SUMMARY' : 'Invalid Time / Duration',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: calcResult.isValid
+                                          ? (isDark ? const Color(0xFFA5B4FC) : const Color(0xFF3730A3))
+                                          : Colors.red,
+                                    ),
+                                  ),
                                 ],
                               ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text('Net Working Hours', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
-                                  const SizedBox(height: 2),
-                                  Text(calcResult.formattedWorkingHours, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
-                                ],
-                              ),
+                              const SizedBox(height: 8),
+                              if (calcResult.isValid) ...[
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Shift Duration', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
+                                        const SizedBox(height: 2),
+                                        Text(ShiftDurationCalculator.formatHoursShort(calcResult.workingHours), style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
+                                      ],
+                                    ),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text('Overtime', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          overtimeEligible ? 'Enabled' : 'Disabled',
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: overtimeEligible ? const Color(0xFF10B981) : Colors.grey),
+                                        ),
+                                      ],
+                                    ),
+                                    if (overtimeEligible)
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('OT Limit', style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : const Color(0xFF64748B))),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            ShiftDurationCalculator.formatHoursShort(selectedOtLimit),
+                                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFFEC4899)),
+                                          ),
+                                        ],
+                                      ),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text('Max Working Time', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5), fontWeight: FontWeight.bold)),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          ShiftDurationCalculator.formatHoursShort(overtimeEligible ? (calcResult.workingHours + selectedOtLimit) : calcResult.workingHours),
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5)),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ] else ...[
+                                Text(
+                                  calcResult.errorMessage ?? 'Please enter valid Start Time and End Time',
+                                  style: const TextStyle(fontSize: 11, color: Colors.red),
+                                ),
+                              ],
                             ],
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
 
                         Row(
                           children: [
+                            if (overtimeEligible) ...[
+                              Expanded(
+                                child: DropdownButtonFormField<double>(
+                                  value: [1.0, 2.0, 3.0, 4.0].contains(selectedOtLimit) ? selectedOtLimit : 2.0,
+                                  decoration: const InputDecoration(
+                                    labelText: 'OT Limit *',
+                                    prefixIcon: Icon(Icons.more_time_rounded),
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(value: 1.0, child: Text('1 Hour')),
+                                    DropdownMenuItem(value: 2.0, child: Text('2 Hours (Default)')),
+                                    DropdownMenuItem(value: 3.0, child: Text('3 Hours')),
+                                    DropdownMenuItem(value: 4.0, child: Text('4 Hours')),
+                                  ],
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setDialogState(() {
+                                        selectedOtLimit = val;
+                                      });
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
                             Expanded(
                               child: TextFormField(
                                 controller: lateCtrl,
@@ -2292,19 +2627,11 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                                 keyboardType: TextInputType.number,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextFormField(
-                                controller: earlyCtrl,
-                                decoration: const InputDecoration(labelText: 'Early Exit Tolerance (mins)'),
-                                keyboardType: TextInputType.number,
-                              ),
-                            ),
                           ],
                         ),
                         const SizedBox(height: 12),
                         SwitchListTile(
-                          title: const Text('Overtime Eligible', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                          title: const Text('Overtime Allowed', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                           value: overtimeEligible,
                           onChanged: (val) {
                             setDialogState(() {
@@ -2340,7 +2667,8 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                         gracePeriodMinutes: int.parse(lateCtrl.text.isEmpty ? '0' : lateCtrl.text),
                         halfDayThresholdHours: 4.0,
                         overtimeAllowed: overtimeEligible,
-                        overtimeStartAfterHours: overtimeEligible ? 9.0 : 0.0,
+                        overtimeStartAfterHours: calcResult.workingHours,
+                        otLimitHours: selectedOtLimit,
                         weeklyOffDays: const ['Sunday'],
                         status: shift?.status ?? 'active',
                         createdAt: shift?.createdAt ?? DateTime.now(),

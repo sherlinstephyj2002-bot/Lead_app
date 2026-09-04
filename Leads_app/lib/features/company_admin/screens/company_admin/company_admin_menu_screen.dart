@@ -62,8 +62,26 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
       // 2. SALARY & PAYROLL
       {
         'category': 'SALARY & PAYROLL',
-        'title': 'Salary Configuration & Payslips',
-        'subtitle': 'Manage payslips, structure assignments & monthly generation',
+        'title': 'Salary Structures',
+        'subtitle': 'Configure salary packages, structures & assign to employees',
+        'icon': Icons.account_tree_rounded,
+        'route': '/company-admin/salary-structures',
+        'color': const Color(0xFF6366F1),
+        'permission': 'payroll.manage',
+      },
+      {
+        'category': 'SALARY & PAYROLL',
+        'title': 'Payroll Processing',
+        'subtitle': 'Select cycle, generate, review & approve monthly payroll',
+        'icon': Icons.account_balance_wallet_rounded,
+        'route': '/company-admin/payroll-processing',
+        'color': const Color(0xFF0EA5E9),
+        'permission': 'payroll.manage',
+      },
+      {
+        'category': 'SALARY & PAYROLL',
+        'title': 'Payslips & Salary Reports',
+        'subtitle': 'View, generate & download employee payslips & reports',
         'icon': Icons.payments_rounded,
         'route': '/company-admin/salary-payroll',
         'color': const Color(0xFF10B981),
@@ -71,54 +89,13 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
       },
       {
         'category': 'SALARY & PAYROLL',
-        'title': 'Monthly Payroll Processing',
-        'subtitle': 'Verify working days, overtime, LOP & submit monthly payroll',
-        'icon': Icons.account_balance_wallet_rounded,
-        'route': '/company-admin/monthly-payroll',
-        'color': const Color(0xFF0EA5E9),
-        'permission': 'payroll.manage',
-      },
-      // Temporarily hidden per user request: Salary Components & Payroll Settings
-      /*
-      {
-        'category': 'SALARY & PAYROLL',
-        'title': 'Salary Components',
-        'subtitle': 'Configure earnings, deductions & allowance components',
-        'icon': Icons.tune_rounded,
-        'route': '/company-admin/salary-components',
-        'color': const Color(0xFFF59E0B),
-        'permission': 'payroll.manage',
-      },
-      */
-      {
-        'category': 'SALARY & PAYROLL',
-        'title': 'Salary Structure Templates',
-        'subtitle': 'Configure salary packages, templates & employee structure mapping',
-        'icon': Icons.receipt_long_rounded,
-        'route': '/company-admin/salary-structures',
-        'color': const Color(0xFF6366F1),
-        'permission': 'payroll.manage',
-      },
-      {
-        'category': 'SALARY & PAYROLL',
         'title': 'PF / ESI & Statutory Taxes',
-        'subtitle': 'Manage Provident Fund, ESI, TDS & Tax compliance',
+        'subtitle': 'Manage Provident Fund, ESI, TDS & statutory tax compliance',
         'icon': Icons.shield_rounded,
         'route': '/company-admin/pf-esi-tax',
         'color': const Color(0xFF8B5CF6),
         'permission': 'payroll.manage',
       },
-      /*
-      {
-        'category': 'SALARY & PAYROLL',
-        'title': 'Payroll Settings',
-        'subtitle': 'Configure pay cycle dates, LOP rules & pay slip templates',
-        'icon': Icons.settings_suggest_rounded,
-        'route': '/company-admin/payroll-settings',
-        'color': const Color(0xFFEC4899),
-        'permission': 'payroll.manage',
-      },
-      */
 
       // 3. COMPANY ADMINISTRATION
       {
@@ -177,8 +154,8 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
       },
       {
         'category': 'COMPANY ADMINISTRATION',
-        'title': 'Consolidated Reports',
-        'subtitle': 'View company overview reports & analytics',
+        'title': 'Reports & Analytics',
+        'subtitle': 'Comprehensive business, workforce & payroll analytics',
         'icon': Icons.analytics_rounded,
         'route': '/company-admin/reports',
         'color': const Color(0xFF64748B),

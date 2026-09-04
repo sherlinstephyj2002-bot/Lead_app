@@ -11,7 +11,8 @@ class FileDownloadService {
     required String csvContent,
     required String fileName,
   }) async {
-    final bytes = utf8.encode(csvContent);
+    final bomCsv = csvContent.startsWith('\uFEFF') ? csvContent : '\uFEFF$csvContent';
+    final bytes = utf8.encode(bomCsv);
     final fullName = fileName.endsWith('.csv') ? fileName : '$fileName.csv';
 
     if (kIsWeb) {

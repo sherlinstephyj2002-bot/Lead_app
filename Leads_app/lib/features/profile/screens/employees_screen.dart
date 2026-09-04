@@ -12,6 +12,11 @@ import '../../../constants/feature_flags.dart';
 import '../../../shared/widgets/company_logo_avatar.dart';
 import '../../company_admin/providers/company_admin_providers.dart';
 import '../../company_admin/screens/company_admin/employee_profile_screen.dart';
+import '../../../shared/widgets/searchable_dropdown.dart';
+import '../../company_admin/models/role_model.dart';
+import '../../company_admin/models/designation_model.dart';
+import '../../../shared/models/department_model.dart';
+import '../../../shared/utils/organizational_role_helper.dart';
 
 class EmployeesScreen extends ConsumerStatefulWidget {
   const EmployeesScreen({super.key});
@@ -808,11 +813,26 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
   late final TextEditingController _empIdCtrl;
   late final TextEditingController _phoneCtrl;
   late final TextEditingController _personalEmailCtrl;
-  late final TextEditingController _designationCtrl;
-  late final TextEditingController _departmentCtrl;
+
+  DepartmentModel? _selectedDepartment;
+  DesignationModel? _selectedDesignation;
+  RoleModel? _selectedRoleModel;
+
   String? _selectedBranchId;
   String _selectedRole = UserRoles.employee;
   bool _isSaving = false;
+
+  // Attendance Automation Settings
+  late String _employeeWorkType;
+  late List<String> _notificationRecipients;
+  late bool _enableCheckInReminder;
+  late TextEditingController _checkInGraceCtrl;
+  late bool _enableAutoAbsent;
+  late TextEditingController _autoAbsentGraceCtrl;
+  late bool _enableCheckOutReminder;
+  late TextEditingController _checkOutGraceCtrl;
+  late bool _enableAutoCheckout;
+  late TextEditingController _autoCheckoutGraceCtrl;
 
   @override
   void initState() {
@@ -821,10 +841,19 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
     _empIdCtrl = TextEditingController(text: widget.existing?.employeeId ?? '');
     _phoneCtrl = TextEditingController(text: widget.existing?.phoneNumber ?? '');
     _personalEmailCtrl = TextEditingController(text: widget.existing?.personalEmail ?? widget.existing?.employeeEmail ?? '');
-    _designationCtrl = TextEditingController(text: widget.existing?.designation ?? '');
-    _departmentCtrl = TextEditingController(text: widget.existing?.department ?? '');
     _selectedRole = UserModel.normalizeRole(widget.existing?.role ?? UserRoles.employee);
     _selectedBranchId = widget.existing?.branchId;
+
+    _employeeWorkType = widget.existing?.employeeWorkType ?? 'office';
+    _notificationRecipients = List<String>.from(widget.existing?.attendanceNotificationRecipients ?? ['hr', 'reporting_manager']);
+    _enableCheckInReminder = widget.existing?.enableCheckInReminder ?? true;
+    _checkInGraceCtrl = TextEditingController(text: (widget.existing?.checkInGraceMinutes ?? 30).toString());
+    _enableAutoAbsent = widget.existing?.enableAutoAbsent ?? true;
+    _autoAbsentGraceCtrl = TextEditingController(text: (widget.existing?.autoAbsentGraceMinutes ?? 120).toString());
+    _enableCheckOutReminder = widget.existing?.enableCheckOutReminder ?? true;
+    _checkOutGraceCtrl = TextEditingController(text: (widget.existing?.checkOutGraceMinutes ?? 30).toString());
+    _enableAutoCheckout = widget.existing?.enableAutoCheckout ?? (widget.existing?.employeeWorkType == 'field');
+    _autoCheckoutGraceCtrl = TextEditingController(text: (widget.existing?.autoCheckoutGraceMinutes ?? 180).toString());
   }
 
   @override
@@ -833,8 +862,10 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
     _empIdCtrl.dispose();
     _phoneCtrl.dispose();
     _personalEmailCtrl.dispose();
-    _designationCtrl.dispose();
-    _departmentCtrl.dispose();
+    _checkInGraceCtrl.dispose();
+    _autoAbsentGraceCtrl.dispose();
+    _checkOutGraceCtrl.dispose();
+    _autoCheckoutGraceCtrl.dispose();
     super.dispose();
   }
 
@@ -1011,73 +1042,109 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
               style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
             );
 
-            final deptDropdown = Consumer(
-              builder: (context, ref, child) {
-                final deptsAsync = ref.watch(adminDepartmentsProvider);
-                final activeDepts = (deptsAsync.value ?? []).where((d) => d.status.toLowerCase() == 'active').toList();
-                final options = activeDepts.map((d) => d.name).toList();
-                if (_departmentCtrl.text.isNotEmpty && !options.contains(_departmentCtrl.text)) {
-                  options.insert(0, _departmentCtrl.text);
-                }
+            final deptsAsync = widget.ref.watch(adminDepartmentsProvider);
+            final desigsAsync = widget.ref.watch(adminDesignationsProvider);
+            final rolesAsync = widget.ref.watch(adminRolesProvider);
 
-                if (options.isEmpty) {
-                  return TextFormField(
-                    controller: _departmentCtrl,
-                    decoration: _cleanInputDecoration(Icons.domain_outlined, hintText: 'Enter department name'),
-                    style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
-                    validator: (val) => (val == null || val.trim().isEmpty) ? 'Department selection is required' : null,
-                  );
-                }
+            final activeDepts = (deptsAsync.value ?? []).where((d) => d.status.toLowerCase() == 'active').toList();
+            final allDesigs = (desigsAsync.value ?? []).where((d) => d.status.toLowerCase() == 'active').toList();
+            final allRoles = (rolesAsync.value ?? []).where((r) => r.status.toLowerCase() == 'active').toList();
 
-                return DropdownButtonFormField<String>(
-                  value: options.contains(_departmentCtrl.text) ? _departmentCtrl.text : null,
-                  decoration: _cleanInputDecoration(Icons.domain_outlined, hintText: 'Select Department'),
-                  style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFF1B1B24)),
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
-                  items: [
-                    const DropdownMenuItem<String>(value: null, child: Text('Select Department', style: TextStyle(fontFamily: 'Inter'))),
-                    ...options.map((d) => DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontFamily: 'Inter')))),
-                  ],
-                  validator: (val) => (val == null || val.trim().isEmpty) ? 'Department selection is required' : null,
-                  onChanged: (val) {
-                    setState(() => _departmentCtrl.text = val ?? '');
-                  },
-                );
+            if (_selectedDepartment == null && widget.existing != null && activeDepts.isNotEmpty) {
+              final deptId = widget.existing!.departmentId;
+              final deptName = widget.existing!.department;
+              final match = activeDepts.firstWhere(
+                (d) => d.departmentId == deptId || d.departmentName == deptName,
+                orElse: () => activeDepts.first,
+              );
+              _selectedDepartment = match;
+            }
+
+            final availableDesigs = _selectedDepartment == null
+                ? <DesignationModel>[]
+                : allDesigs.where((d) {
+                    return d.applicableDepartmentIds.contains(_selectedDepartment!.departmentId) ||
+                        d.departmentId == _selectedDepartment!.departmentId ||
+                        d.applicableDepartmentIds.isEmpty;
+                  }).toList();
+
+            if (_selectedDesignation == null && widget.existing != null && availableDesigs.isNotEmpty) {
+              final desigId = widget.existing!.designationId;
+              final desigName = widget.existing!.designation;
+              final match = availableDesigs.firstWhere(
+                (d) => d.designationId == desigId || d.designationName == desigName,
+                orElse: () => availableDesigs.first,
+              );
+              _selectedDesignation = match;
+            }
+
+            final availableRoles = OrganizationalRoleHelper.getAvailableRoles(
+              department: _selectedDepartment,
+              designation: _selectedDesignation,
+              allRoles: allRoles,
+            );
+
+            if (_selectedRoleModel == null && widget.existing != null && availableRoles.isNotEmpty) {
+              final roleId = widget.existing!.roleId;
+              final roleName = widget.existing!.role;
+              final match = availableRoles.firstWhere(
+                (r) => r.roleId == roleId || r.roleName == roleName,
+                orElse: () => availableRoles.first,
+              );
+              _selectedRoleModel = match;
+            }
+
+            final deptDropdown = SearchableSingleSelectDropdown<DepartmentModel>(
+              label: 'Department *',
+              hint: 'Select Department',
+              icon: Icons.business_center_rounded,
+              items: activeDepts,
+              selectedItem: _selectedDepartment,
+              itemAsString: (d) => d.departmentName,
+              itemAsSubTitle: (d) => d.departmentCode,
+              validatorError: 'Department selection is required',
+              onChanged: (val) {
+                setState(() {
+                  _selectedDepartment = val;
+                  _selectedDesignation = null;
+                  _selectedRoleModel = null;
+                });
               },
             );
 
-            final desigDropdown = Consumer(
-              builder: (context, ref, child) {
-                final desigsAsync = ref.watch(adminDesignationsProvider);
-                final activeDesigs = (desigsAsync.value ?? []).where((d) => d.status.toLowerCase() == 'active').toList();
-                final options = activeDesigs.map((d) => d.designationName).toList();
-                if (_designationCtrl.text.isNotEmpty && !options.contains(_designationCtrl.text)) {
-                  options.insert(0, _designationCtrl.text);
-                }
+            final desigDropdown = SearchableSingleSelectDropdown<DesignationModel>(
+              label: 'Designation *',
+              hint: _selectedDepartment == null ? 'Select Department first' : 'Select Designation',
+              icon: Icons.badge_outlined,
+              enabled: _selectedDepartment != null,
+              items: availableDesigs,
+              selectedItem: _selectedDesignation,
+              itemAsString: (d) => d.designationName,
+              validatorError: 'Designation selection is required',
+              onChanged: (val) {
+                setState(() {
+                  _selectedDesignation = val;
+                  _selectedRoleModel = null;
+                });
+              },
+            );
 
-                if (options.isEmpty) {
-                  return TextFormField(
-                    controller: _designationCtrl,
-                    decoration: _cleanInputDecoration(Icons.work_outline_rounded, hintText: 'Enter designation name'),
-                    style: const TextStyle(fontFamily: 'Inter', fontSize: 14),
-                    validator: (val) => (val == null || val.trim().isEmpty) ? 'Designation selection is required' : null,
-                  );
-                }
-
-                return DropdownButtonFormField<String>(
-                  value: options.contains(_designationCtrl.text) ? _designationCtrl.text : null,
-                  decoration: _cleanInputDecoration(Icons.work_outline_rounded, hintText: 'Select Designation'),
-                  style: const TextStyle(fontFamily: 'Inter', fontSize: 14, color: Color(0xFF1B1B24)),
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
-                  items: [
-                    const DropdownMenuItem<String>(value: null, child: Text('Select Designation', style: TextStyle(fontFamily: 'Inter'))),
-                    ...options.map((d) => DropdownMenuItem(value: d, child: Text(d, style: const TextStyle(fontFamily: 'Inter')))),
-                  ],
-                  validator: (val) => (val == null || val.trim().isEmpty) ? 'Designation selection is required' : null,
-                  onChanged: (val) {
-                    setState(() => _designationCtrl.text = val ?? '');
-                  },
-                );
+            final roleDropdown = SearchableSingleSelectDropdown<RoleModel>(
+              label: 'Role *',
+              hint: _selectedDesignation == null ? 'Select Designation first' : 'Select Role',
+              icon: Icons.security_rounded,
+              enabled: _selectedDesignation != null,
+              items: availableRoles,
+              selectedItem: _selectedRoleModel,
+              itemAsString: (r) => r.roleName,
+              validatorError: 'Role selection is required',
+              onChanged: (val) {
+                setState(() {
+                  _selectedRoleModel = val;
+                  if (val != null) {
+                    _selectedRole = UserModel.normalizeRole(val.roleName);
+                  }
+                });
               },
             );
 
@@ -1168,10 +1235,248 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                       _buildFieldWrapper('Designation', true, desigDropdown),
                       isDesktop,
                     ),
+                    const SizedBox(height: 12),
+                    _buildFieldWrapper('Role', true, roleDropdown),
                     if (!isEdit && FeatureFlags.enableBranchManagement) ...[
                       const SizedBox(height: 14),
                       _buildFieldWrapper('Assign Branch', true, branchDropdown),
                     ],
+                    const SizedBox(height: 16),
+
+                    // SECTION 3: ATTENDANCE AUTOMATION SETTINGS
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          initiallyExpanded: isEdit || _employeeWorkType == 'field',
+                          title: const Row(
+                            children: [
+                              Icon(Icons.tune_rounded, color: Color(0xFF5B4CF0), size: 20),
+                              SizedBox(width: 8),
+                              Text('Attendance Automation Settings', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B))),
+                            ],
+                          ),
+                          subtitle: const Text('Work type, notification recipients, reminders & auto checkout', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontFamily: 'Inter')),
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // 1. Employee Work Type
+                                  const Text('Employee Work Type', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Inter', color: Color(0xFF334155))),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: ChoiceChip(
+                                          label: const Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.business_rounded, size: 16),
+                                              SizedBox(width: 6),
+                                              Text('Normal Office Employee', style: TextStyle(fontSize: 12, fontFamily: 'Inter')),
+                                            ],
+                                          ),
+                                          selected: _employeeWorkType == 'office',
+                                          selectedColor: const Color(0xFF5B4CF0).withValues(alpha: 0.15),
+                                          onSelected: (sel) {
+                                            if (sel) setState(() => _employeeWorkType = 'office');
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: ChoiceChip(
+                                          label: const Row(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.commute_rounded, size: 16),
+                                              SizedBox(width: 6),
+                                              Text('Field Employee', style: TextStyle(fontSize: 12, fontFamily: 'Inter')),
+                                            ],
+                                          ),
+                                          selected: _employeeWorkType == 'field',
+                                          selectedColor: const Color(0xFF5B4CF0).withValues(alpha: 0.15),
+                                          onSelected: (sel) {
+                                            if (sel) {
+                                              setState(() {
+                                                _employeeWorkType = 'field';
+                                                _enableAutoCheckout = true;
+                                              });
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+
+                                  // 2. Notification Recipients
+                                  const Text('Attendance Notification Recipients', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Inter', color: Color(0xFF334155))),
+                                  const Text('Select who receives attendance alerts for this employee (Employee always receives own reminders):', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontFamily: 'Inter')),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      FilterChip(
+                                        label: const Text('HR'),
+                                        selected: _notificationRecipients.contains('hr'),
+                                        onSelected: (sel) {
+                                          setState(() {
+                                            if (sel) {
+                                              _notificationRecipients.add('hr');
+                                            } else {
+                                              _notificationRecipients.remove('hr');
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      FilterChip(
+                                        label: const Text('Reporting Manager'),
+                                        selected: _notificationRecipients.contains('reporting_manager'),
+                                        onSelected: (sel) {
+                                          setState(() {
+                                            if (sel) {
+                                              _notificationRecipients.add('reporting_manager');
+                                            } else {
+                                              _notificationRecipients.remove('reporting_manager');
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      FilterChip(
+                                        label: const Text('Team Leader'),
+                                        selected: _notificationRecipients.contains('team_leader'),
+                                        onSelected: (sel) {
+                                          setState(() {
+                                            if (sel) {
+                                              _notificationRecipients.add('team_leader');
+                                            } else {
+                                              _notificationRecipients.remove('team_leader');
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      FilterChip(
+                                        label: const Text('Company Admin'),
+                                        selected: _notificationRecipients.contains('company_admin'),
+                                        onSelected: (sel) {
+                                          setState(() {
+                                            if (sel) {
+                                              _notificationRecipients.add('company_admin');
+                                            } else {
+                                              _notificationRecipients.remove('company_admin');
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+
+                                  // 3. Morning Check-in Rules
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: const Text('Morning Check-in Reminder', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                                    subtitle: const Text('Send reminder if employee has not checked in', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                    value: _enableCheckInReminder,
+                                    onChanged: (val) => setState(() => _enableCheckInReminder = val),
+                                  ),
+                                  if (_enableCheckInReminder) ...[
+                                    TextFormField(
+                                      controller: _checkInGraceCtrl,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Check-in Grace Period (minutes after shift start)',
+                                        border: OutlineInputBorder(),
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      ),
+                                      style: const TextStyle(fontSize: 12, fontFamily: 'Inter'),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+
+                                  // 4. Auto Absent Rules
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: const Text('Auto Absent Rules', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                                    subtitle: const Text('Automatically mark absent if check-in threshold is exceeded', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                    value: _enableAutoAbsent,
+                                    onChanged: (val) => setState(() => _enableAutoAbsent = val),
+                                  ),
+                                  if (_enableAutoAbsent) ...[
+                                    TextFormField(
+                                      controller: _autoAbsentGraceCtrl,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Auto Absent Grace Period (minutes after shift start)',
+                                        border: OutlineInputBorder(),
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      ),
+                                      style: const TextStyle(fontSize: 12, fontFamily: 'Inter'),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+
+                                  // 5. Evening Check-out Rules
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: const Text('Evening Check-out Reminder', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                                    subtitle: const Text('Remind checked-in employees missing checkout after shift end', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                    value: _enableCheckOutReminder,
+                                    onChanged: (val) => setState(() => _enableCheckOutReminder = val),
+                                  ),
+                                  if (_enableCheckOutReminder) ...[
+                                    TextFormField(
+                                      controller: _checkOutGraceCtrl,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Check-out Grace Period (minutes after shift end)',
+                                        border: OutlineInputBorder(),
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      ),
+                                      style: const TextStyle(fontSize: 12, fontFamily: 'Inter'),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+
+                                  // 6. Auto Checkout Rules
+                                  SwitchListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    title: Text(
+                                      'Enable Auto Checkout ${_employeeWorkType == 'field' ? '(Recommended for Field Employees)' : ''}',
+                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
+                                    ),
+                                    subtitle: const Text('Automatically record checkout with "System Auto Checkout" marker', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                                    value: _enableAutoCheckout,
+                                    onChanged: (val) => setState(() => _enableAutoCheckout = val),
+                                  ),
+                                  if (_enableAutoCheckout) ...[
+                                    TextFormField(
+                                      controller: _autoCheckoutGraceCtrl,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Auto Checkout Grace Period (minutes after shift end)',
+                                        border: OutlineInputBorder(),
+                                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                      ),
+                                      style: const TextStyle(fontSize: 12, fontFamily: 'Inter'),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 24),
 
                     // Submit button
@@ -1236,9 +1541,12 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
               'name': _nameCtrl.text.trim(),
               'personalEmail': _personalEmailCtrl.text.trim(),
               'phone': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-              'designation': _designationCtrl.text.trim().isEmpty ? null : _designationCtrl.text.trim(),
-              'department': _departmentCtrl.text.trim().isEmpty ? null : _departmentCtrl.text.trim(),
-              'role': _selectedRole,
+              'departmentId': _selectedDepartment?.departmentId,
+              'department': _selectedDepartment?.departmentName,
+              'designationId': _selectedDesignation?.designationId,
+              'designation': _selectedDesignation?.designationName,
+              'roleId': _selectedRoleModel?.roleId,
+              'role': _selectedRoleModel?.roleName ?? _selectedRole,
               'branchId': _selectedBranchId,
             },
           );
@@ -1298,15 +1606,27 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                 employeeId: _empIdCtrl.text.trim(),
                 personalEmail: _personalEmailCtrl.text.trim(),
                 phoneNumber: _phoneCtrl.text.trim(),
-                departmentId: null,
-                department: _departmentCtrl.text.trim().isEmpty ? null : _departmentCtrl.text.trim(),
-                designationId: null,
-                designation: _designationCtrl.text.trim().isEmpty ? null : _designationCtrl.text.trim(),
+                departmentId: _selectedDepartment?.departmentId,
+                department: _selectedDepartment?.departmentName,
+                designationId: _selectedDesignation?.designationId,
+                designation: _selectedDesignation?.designationName,
+                roleId: _selectedRoleModel?.roleId,
+                jobRole: _selectedRoleModel?.roleName ?? _selectedRole,
                 managerId: null,
                 joiningDate: DateTime.now(),
                 employmentType: 'Full-Time',
                 branchId: _selectedBranchId,
                 branchName: branchName,
+                employeeWorkType: _employeeWorkType,
+                attendanceNotificationRecipients: _notificationRecipients,
+                enableCheckInReminder: _enableCheckInReminder,
+                checkInGraceMinutes: int.tryParse(_checkInGraceCtrl.text) ?? 30,
+                enableAutoAbsent: _enableAutoAbsent,
+                autoAbsentGraceMinutes: int.tryParse(_autoAbsentGraceCtrl.text) ?? 120,
+                enableCheckOutReminder: _enableCheckOutReminder,
+                checkOutGraceMinutes: int.tryParse(_checkOutGraceCtrl.text) ?? 30,
+                enableAutoCheckout: _enableAutoCheckout,
+                autoCheckoutGraceMinutes: int.tryParse(_autoCheckoutGraceCtrl.text) ?? 180,
               );
 
               if (mounted) Navigator.pop(context); // Dismiss loader
@@ -1398,10 +1718,23 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
         // Edit flow (Admin only)
         final updated = widget.existing!.copyWith(
           name: _nameCtrl.text.trim(),
-          role: _selectedRole,
+          role: _selectedRoleModel?.roleName ?? _selectedRole,
+          roleId: _selectedRoleModel?.roleId,
           phoneNumber: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-          designation: _designationCtrl.text.trim().isEmpty ? null : _designationCtrl.text.trim(),
-          department: _departmentCtrl.text.trim().isEmpty ? null : _departmentCtrl.text.trim(),
+          departmentId: _selectedDepartment?.departmentId,
+          department: _selectedDepartment?.departmentName,
+          designationId: _selectedDesignation?.designationId,
+          designation: _selectedDesignation?.designationName,
+          employeeWorkType: _employeeWorkType,
+          attendanceNotificationRecipients: _notificationRecipients,
+          enableCheckInReminder: _enableCheckInReminder,
+          checkInGraceMinutes: int.tryParse(_checkInGraceCtrl.text) ?? 30,
+          enableAutoAbsent: _enableAutoAbsent,
+          autoAbsentGraceMinutes: int.tryParse(_autoAbsentGraceCtrl.text) ?? 120,
+          enableCheckOutReminder: _enableCheckOutReminder,
+          checkOutGraceMinutes: int.tryParse(_checkOutGraceCtrl.text) ?? 30,
+          enableAutoCheckout: _enableAutoCheckout,
+          autoCheckoutGraceMinutes: int.tryParse(_autoCheckoutGraceCtrl.text) ?? 180,
         );
 
         await widget.ref.read(employeesProvider.notifier).updateEmployee(updated);

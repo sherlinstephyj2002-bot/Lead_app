@@ -14,6 +14,8 @@ import '../../../shared/models/task_model.dart';
 import '../../../shared/models/user_model.dart';
 import '../../../shared/services/pdf_service.dart';
 import '../../../shared/services/file_download_service.dart';
+import '../../../shared/utils/app_notification.dart';
+import '../../../shared/services/app_error_handler.dart';
 
 class OrderDetailScreen extends ConsumerStatefulWidget {
   final String orderId;
@@ -88,25 +90,19 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
     if (status == 'Closed' || status == 'Delivered' || status == 'Completed') {
       if (!permService.hasPermission('order_close') && !permService.hasPermission('order.close')) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Access Denied: You do not have permission to close orders.', style: TextStyle(fontFamily: 'Outfit')), backgroundColor: Colors.red),
-        );
+        AppNotification.showError(context, 'Access Denied: You do not have permission to close orders.');
         return;
       }
     } else if (status == 'Cancelled') {
       if (!permService.hasPermission('order_cancel') && !permService.hasPermission('order.cancel')) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Access Denied: You do not have permission to cancel orders.', style: TextStyle(fontFamily: 'Outfit')), backgroundColor: Colors.red),
-        );
+        AppNotification.showError(context, 'Access Denied: You do not have permission to cancel orders.');
         return;
       }
     } else {
       if (!permService.hasPermission('order_edit') && !permService.hasPermission('order.edit')) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Access Denied: You do not have permission to edit orders.', style: TextStyle(fontFamily: 'Outfit')), backgroundColor: Colors.red),
-        );
+        AppNotification.showError(context, 'Access Denied: You do not have permission to edit orders.');
         return;
       }
     }
@@ -130,23 +126,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
       if (!mounted) return;
       await _fetchOrderDetails();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Order status updated to $status', style: const TextStyle(fontFamily: 'Outfit')), behavior: SnackBarBehavior.floating),
-      );
+      AppNotification.showSuccess(context, 'Order status updated to $status');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update status: $e', style: const TextStyle(fontFamily: 'Outfit')), backgroundColor: Colors.red),
-      );
+      AppNotification.showError(context, AppErrorHandler.parseError(e));
     }
   }
 
   void _deleteOrderDialog() {
     final permService = ref.read(permissionServiceProvider);
     if (!permService.hasPermission('order_delete') && !permService.hasPermission('order.delete')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Access Denied: You do not have permission to delete orders.', style: TextStyle(fontFamily: 'Outfit')), backgroundColor: Colors.red),
-      );
+      AppNotification.showError(context, 'Access Denied: You do not have permission to delete orders.');
       return;
     }
     showDialog(
@@ -165,15 +155,11 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 await ref.read(ordersProvider.notifier).deleteOrder(_order.orderId);
                 if (mounted) {
                   context.pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Order ${_order.orderId} deleted.'), behavior: SnackBarBehavior.floating),
-                  );
+                  AppNotification.showSuccess(context, 'Order ${_order.orderId} deleted.');
                 }
               } catch (e) {
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to delete order: $e'), backgroundColor: Colors.red),
-                  );
+                  AppNotification.showError(context, AppErrorHandler.parseError(e));
                 }
               }
             },
@@ -221,9 +207,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 Navigator.of(context).pop();
                 await _loadOrderActivities();
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Note saved successfully.'), behavior: SnackBarBehavior.floating),
-                );
+                AppNotification.showSuccess(context, 'Note saved successfully.');
               }
             },
             child: const Text('Save', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
@@ -270,9 +254,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                 Navigator.of(context).pop();
                 await _loadOrderActivities();
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Delivery update logged successfully.'), behavior: SnackBarBehavior.floating),
-                );
+                AppNotification.showSuccess(context, 'Delivery update logged successfully.');
               }
             },
             child: const Text('Save', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
@@ -416,23 +398,17 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
 
                         await _loadOrderActivities();
 
+                        if (!dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
+
+                        await _loadOrderActivities();
+
                         if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Expense logged successfully.', style: TextStyle(fontFamily: 'Outfit')),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
+                        AppNotification.showSuccess(context, 'Expense logged successfully.');
                       } catch (e) {
                         setDialogState(() => isLoading = false);
                         if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Failed to add expense: $e', style: const TextStyle(fontFamily: 'Outfit')),
-                            backgroundColor: Colors.red,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
+                        AppNotification.showError(context, AppErrorHandler.parseError(e));
                       }
                     },
               child: isLoading
@@ -511,9 +487,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
                   await ref.read(ordersProvider.notifier).reassignOrderEngineer(_order.orderId, selectedUid, selectedName);
                   if (mounted) {
                     _fetchOrderDetails();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Order reassigned to $selectedName.'), behavior: SnackBarBehavior.floating),
-                    );
+                    AppNotification.showSuccess(context, 'Order reassigned to $selectedName.');
                   }
                 },
                 child: const Text('Reassign', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold)),
@@ -665,13 +639,7 @@ class _OrderDetailScreenState extends ConsumerState<OrderDetailScreen> {
               );
               await FileDownloadService.downloadPdf(pdfBytes: pdfBytes, fileName: 'Invoice_${_order.orderId}.pdf');
               if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Invoice_${_order.orderId}.pdf downloaded to your Downloads folder.', style: const TextStyle(fontFamily: 'Outfit')),
-                  backgroundColor: const Color(0xFF10B981),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
+              AppNotification.showSuccess(context, 'Invoice downloaded successfully.');
             },
           ),
           const SizedBox(width: 8),

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../constants/user_roles.dart';
+import '../../../shared/utils/app_notification.dart';
 
 class GdprPanelWidget extends ConsumerStatefulWidget {
   const GdprPanelWidget({super.key});
@@ -81,9 +82,7 @@ class _GdprPanelWidgetState extends ConsumerState<GdprPanelWidget> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: prettyJson));
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('JSON data copied to clipboard!')),
-              );
+              AppNotification.showSuccess(context, 'JSON data copied to clipboard!');
             },
             icon: const Icon(Icons.copy_rounded, size: 16),
             label: const Text('Copy to Clipboard'),
@@ -118,9 +117,7 @@ class _GdprPanelWidgetState extends ConsumerState<GdprPanelWidget> {
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444), foregroundColor: Colors.white),
             onPressed: () {
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('GDPR Erasure request queued successfully. Our data protection officer will process it within 30 days.')),
-              );
+              AppNotification.showSuccess(context, 'GDPR Erasure request queued successfully.');
             },
             child: const Text('Confirm Deletion'),
           ),

@@ -11,6 +11,8 @@ import '../../../constants/user_roles.dart';
 import '../../../constants/feature_flags.dart';
 import '../../../shared/services/password_validator.dart';
 import '../../../shared/utils/app_validators.dart';
+import '../../../shared/utils/app_notification.dart';
+import '../../../shared/services/app_error_handler.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -92,9 +94,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   Future<void> _pickLogo() async {
     if (!FeatureFlags.enableImageUpload) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File upload is currently disabled.')),
-        );
+        AppNotification.showError(context, 'File upload is currently disabled.');
       }
       return;
     }
@@ -118,9 +118,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
       if (bytes.lengthInBytes > 2 * 1024 * 1024) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Logo size exceeds 2MB limit.')),
-          );
+          AppNotification.showError(context, 'Logo size exceeds 2MB limit.');
         }
         return;
       }
@@ -135,9 +133,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick logo: $e')),
-        );
+        AppNotification.showError(context, AppErrorHandler.parseError(e));
       }
     }
   }

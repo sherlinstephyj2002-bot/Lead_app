@@ -172,10 +172,21 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
                       const DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.bold))),
                     ],
                     rowBuilder: (desig) {
-                      final deptName = depts
-                          .firstWhere((d) => d.departmentId == desig.departmentId,
-                              orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: 'N/A', departmentCode: 'N/A', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: ''))
-                          .name;
+                      final List<String> deptNames = desig.managedDepartmentIds.map((id) {
+                        return depts.firstWhere(
+                          (d) => d.departmentId == id,
+                          orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: ''),
+                        ).name;
+                      }).where((n) => n.isNotEmpty).toList();
+
+                      final singleDept = depts.firstWhere(
+                        (d) => d.departmentId == desig.departmentId,
+                        orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: ''),
+                      ).name;
+
+                      final deptDisplay = deptNames.isNotEmpty
+                          ? deptNames.join(', ')
+                          : (singleDept.isNotEmpty ? singleDept : 'General / Unassigned');
                       
                       Color statusColor;
                       switch (desig.status.toLowerCase()) {
@@ -191,7 +202,7 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
 
                       return [
                         DataCell(Text(desig.designationName, style: const TextStyle(fontWeight: FontWeight.w600))),
-                        DataCell(Text(deptName)),
+                        DataCell(Text(deptDisplay)),
                         if (FeatureFlags.enableDesignationLevels)
                           DataCell(
                             Container(
@@ -258,24 +269,26 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
     );
   }
 
-  void _showDesigForm(
-    BuildContext context, {
-    DesignationModel? existingDesig,
-    required List<DepartmentModel> depts,
-  }) {
+  void _showDesigForm(BuildContext context, {DesignationModel? existingDesig, required List<DepartmentModel> depts}) {
     final formKey = GlobalKey<FormState>();
     final nameCtrl = TextEditingController(text: existingDesig?.designationName ?? '');
-    final descCtrl = TextEditingController(text: existingDesig?.description ?? '');
-    final levelCtrl = TextEditingController(text: existingDesig?.designationLevel.toString() ?? '1');
+    final levelCtrl = TextEditingController(text: '${existingDesig?.designationLevel ?? 1}');
     
-    // Only display active departments in form dropdown selection, but preserve existing one if editing
+    bool canManageDepts = existingDesig?.canManageDepartments ?? (existingDesig?.isManagerial ?? false);
+
+    // Only display active departments in form selection, but preserve existing ones if editing
     final eligibleDepts = depts.where((d) {
       if (d.status == 'active') return true;
+      if (existingDesig != null && existingDesig.managedDepartmentIds.contains(d.departmentId)) return true;
       if (existingDesig != null && d.departmentId == existingDesig.departmentId) return true;
       return false;
     }).toList();
 
-    String? selectedDeptId = existingDesig?.departmentId ?? (eligibleDepts.isNotEmpty ? eligibleDepts.first.departmentId : null);
+    final Set<String> selectedDeptIds = Set<String>.from(
+      existingDesig?.managedDepartmentIds.isNotEmpty == true
+          ? existingDesig!.managedDepartmentIds
+          : (existingDesig?.departmentId.isNotEmpty == true ? [existingDesig!.departmentId] : []),
+    );
     String selectedStatus = existingDesig?.status ?? 'active';
 
     bool isSubmitting = false;
@@ -285,72 +298,138 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final count = selectedDeptIds.length;
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Text(existingDesig == null ? 'Add Designation' : 'Edit Designation'),
-              content: Form(
-                key: formKey,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        controller: nameCtrl,
-                        decoration: const InputDecoration(labelText: 'Designation Name *', prefixIcon: Icon(Icons.badge_outlined)),
-                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Name is required' : null,
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: selectedDeptId,
-                        decoration: const InputDecoration(labelText: 'Department Link', prefixIcon: Icon(Icons.business_rounded)),
-                        items: eligibleDepts.map((d) {
-                          return DropdownMenuItem(value: d.departmentId, child: Text(d.name));
-                        }).toList(),
-                        onChanged: (val) {
-                          setModalState(() {
-                            selectedDeptId = val;
-                          });
-                        },
-                        validator: (v) => v == null ? 'Department is required' : null,
-                      ),
-                      if (FeatureFlags.enableDesignationLevels) ...[
-                        const SizedBox(height: 12),
+              content: SizedBox(
+                width: 440,
+                child: Form(
+                  key: formKey,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         TextFormField(
-                          controller: levelCtrl,
-                          decoration: const InputDecoration(labelText: 'Hierarchy Level (e.g. 1 for Executive, 5 for VP) *', prefixIcon: Icon(Icons.leaderboard_outlined)),
-                          keyboardType: TextInputType.number,
-                          validator: (v) {
-                            if (!FeatureFlags.enableDesignationLevels) return null;
-                            if (v == null || v.isEmpty) return 'Level is required';
-                            if (int.tryParse(v) == null) return 'Enter a valid number';
-                            return null;
+                          controller: nameCtrl,
+                          decoration: const InputDecoration(labelText: 'Designation Name *', prefixIcon: Icon(Icons.badge_outlined)),
+                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Name is required' : null,
+                        ),
+                        const SizedBox(height: 12),
+                        CheckboxListTile(
+                          value: canManageDepts,
+                          dense: true,
+                          title: const Text('Can manage departments', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+                          subtitle: const Text('Grant management responsibility for employees assigned this designation.', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          activeColor: const Color(0xFF4F46E5),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          contentPadding: EdgeInsets.zero,
+                          onChanged: (val) {
+                            setModalState(() {
+                              canManageDepts = val ?? false;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Departments this designation can manage',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: Text(
+                                count == 1 ? '1 department selected' : '$count departments selected',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1D4ED8)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Select one or multiple departments for managerial roles, or leave unselected for general roles.',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 180),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: eligibleDepts.isEmpty
+                              ? const Padding(
+                                  padding: EdgeInsets.all(16.0),
+                                  child: Text('No active departments found.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  itemCount: eligibleDepts.length,
+                                  separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                                  itemBuilder: (context, index) {
+                                    final d = eligibleDepts[index];
+                                    final isChecked = selectedDeptIds.contains(d.departmentId);
+                                    return CheckboxListTile(
+                                      value: isChecked,
+                                      dense: true,
+                                      title: Text(d.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                                      activeColor: const Color(0xFF4F46E5),
+                                      controlAffinity: ListTileControlAffinity.leading,
+                                      onChanged: (val) {
+                                        setModalState(() {
+                                          if (val == true) {
+                                            selectedDeptIds.add(d.departmentId);
+                                          } else {
+                                            selectedDeptIds.remove(d.departmentId);
+                                          }
+                                        });
+                                      },
+                                    );
+                                  },
+                                ),
+                        ),
+                        if (FeatureFlags.enableDesignationLevels) ...[
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: levelCtrl,
+                            decoration: const InputDecoration(labelText: 'Hierarchy Level (e.g. 1 for Executive, 5 for VP) *', prefixIcon: Icon(Icons.leaderboard_outlined)),
+                            keyboardType: TextInputType.number,
+                            validator: (v) {
+                              if (!FeatureFlags.enableDesignationLevels) return null;
+                              if (v == null || v.isEmpty) return 'Level is required';
+                              if (int.tryParse(v) == null) return 'Enter a valid number';
+                              return null;
+                            },
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value: selectedStatus,
+                          decoration: const InputDecoration(labelText: 'Status', prefixIcon: Icon(Icons.info_outline_rounded)),
+                          items: const [
+                            DropdownMenuItem(value: 'active', child: Text('Active')),
+                            DropdownMenuItem(value: 'suspended', child: Text('Suspended')),
+                            DropdownMenuItem(value: 'archived', child: Text('Archived (Soft Delete)')),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setModalState(() {
+                                selectedStatus = val;
+                              });
+                            }
                           },
                         ),
                       ],
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: descCtrl,
-                        decoration: const InputDecoration(labelText: 'Description', prefixIcon: Icon(Icons.description_outlined)),
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: selectedStatus,
-                        decoration: const InputDecoration(labelText: 'Status', prefixIcon: Icon(Icons.info_outline_rounded)),
-                        items: const [
-                          DropdownMenuItem(value: 'active', child: Text('Active')),
-                          DropdownMenuItem(value: 'suspended', child: Text('Suspended')),
-                          DropdownMenuItem(value: 'archived', child: Text('Archived (Soft Delete)')),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) {
-                            setModalState(() {
-                              selectedStatus = val;
-                            });
-                          }
-                        },
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -366,12 +445,17 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
 
                             setModalState(() { isSubmitting = true; });
 
+                            final selectedList = selectedDeptIds.toList();
+                            final primaryDeptId = selectedList.isNotEmpty ? selectedList.first : '';
+
                             final newDesig = DesignationModel(
                               designationId: existingDesig?.designationId ?? const Uuid().v4(),
                               designationName: nameCtrl.text.trim(),
-                              designationLevel: int.parse(levelCtrl.text.trim()),
-                              departmentId: selectedDeptId!,
-                              description: descCtrl.text.trim(),
+                              designationLevel: int.tryParse(levelCtrl.text.trim()) ?? 1,
+                              departmentId: primaryDeptId,
+                              managedDepartmentIds: selectedList,
+                              canManageDepartments: canManageDepts,
+                              description: '',
                               companyId: user.companyId,
                               status: selectedStatus,
                               createdAt: existingDesig?.createdAt ?? DateTime.now(),
@@ -386,8 +470,9 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
                                   AppNotification.showSuccess(context, 'Designation saved successfully.');
                                 } else {
                                   setModalState(() { isSubmitting = false; });
+                                  final targetDept = depts.firstWhere((d) => d.departmentId == primaryDeptId, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: ''));
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('A designation with this name already exists in this company.'), backgroundColor: Colors.red),
+                                    SnackBar(content: Text('A designation with name "${nameCtrl.text.trim()}" already exists in ${targetDept.name.isNotEmpty ? targetDept.name : "the selected department"}.'), backgroundColor: Colors.red),
                                   );
                                 }
                               }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../shared/providers/providers.dart';
+import '../../../constants/feature_flags.dart';
 
 class EmailVerificationScreen extends ConsumerStatefulWidget {
   const EmailVerificationScreen({super.key});
@@ -118,6 +119,35 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
       if (mounted) {
         setState(() {
           _error = 'Failed to check verification status. Please try again.';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isChecking = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleDevBypass() async {
+    if (_isChecking) return;
+
+    setState(() {
+      _isChecking = true;
+      _message = null;
+      _error = null;
+    });
+
+    try {
+      await ref.read(authProvider.notifier).bypassEmailVerificationDevMode();
+      if (mounted) {
+        context.go('/main');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Failed to bypass verification: $e';
         });
       }
     } finally {
@@ -344,6 +374,31 @@ class _EmailVerificationScreenState extends ConsumerState<EmailVerificationScree
                           ),
                         ),
                       ),
+
+                      if (FeatureFlags.enableDevModeBypass) ...[
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton.icon(
+                            onPressed: _isChecking ? null : _handleDevBypass,
+                            icon: const Icon(Icons.developer_mode_rounded, color: Color(0xFFD97706)),
+                            label: const Text(
+                              '⚡ Dev Mode: Bypass Verification & Login',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFEF3C7),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: const BorderSide(color: Color(0xFFF59E0B), width: 1.5),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+
                       const SizedBox(height: 24),
                       const Divider(color: Color(0xFFE2E8F0)),
                       const SizedBox(height: 8),

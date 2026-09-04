@@ -23,6 +23,7 @@ import '../../../shared/models/app_notification_model.dart';
 import '../models/designation_model.dart';
 import '../models/holiday_model.dart';
 import '../models/shift_model.dart';
+import '../models/role_model.dart';
 import '../models/attendance_settings_model.dart';
 import '../models/overtime_settings_model.dart';
 import '../models/leave_policy_model.dart';
@@ -290,6 +291,20 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
     String? branchName,
     String? salaryStructureId,
     String? salaryStructureName,
+    String? roleId,
+    String? jobRole,
+    List<String>? managedDepartmentIds,
+    List<String>? managedDepartmentNames,
+    String? employeeWorkType,
+    List<String>? attendanceNotificationRecipients,
+    bool? enableCheckInReminder,
+    int? checkInGraceMinutes,
+    bool? enableAutoAbsent,
+    int? autoAbsentGraceMinutes,
+    bool? enableCheckOutReminder,
+    int? checkOutGraceMinutes,
+    bool? enableAutoCheckout,
+    int? autoCheckoutGraceMinutes,
   }) async {
     final adminUser = _ref.read(authProvider).user;
     if (adminUser == null) {
@@ -444,6 +459,10 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
         department: department,
         designationId: designationId,
         designation: designation,
+        roleId: roleId,
+        jobRole: jobRole,
+        managedDepartmentIds: managedDepartmentIds ?? const [],
+        managedDepartmentNames: managedDepartmentNames ?? const [],
         managerId: managerId,
         joiningDate: joiningDate,
         employmentType: employmentType,
@@ -467,6 +486,16 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
         tenantId: adminUser.companyId,
         temporaryPasswordRequired: true,
         accountStatus: 'active',
+        employeeWorkType: employeeWorkType ?? 'office',
+        attendanceNotificationRecipients: attendanceNotificationRecipients ?? const ['hr', 'reporting_manager'],
+        enableCheckInReminder: enableCheckInReminder ?? true,
+        checkInGraceMinutes: checkInGraceMinutes ?? 30,
+        enableAutoAbsent: enableAutoAbsent ?? true,
+        autoAbsentGraceMinutes: autoAbsentGraceMinutes ?? 120,
+        enableCheckOutReminder: enableCheckOutReminder ?? true,
+        checkOutGraceMinutes: checkOutGraceMinutes ?? 30,
+        enableAutoCheckout: enableAutoCheckout ?? (employeeWorkType == 'field'),
+        autoCheckoutGraceMinutes: autoCheckoutGraceMinutes ?? 180,
       );
 
       await _repo.saveUser(newEmp);
@@ -966,18 +995,24 @@ class AdminDepartmentsNotifier extends StateNotifier<AsyncValue<List<DepartmentM
     }
   }
 
-  Future<bool> saveDepartment(DepartmentModel department) async {
-    final isDuplicate = await _repo.isDepartmentNameDuplicate(
+  Future<String> saveDepartment(DepartmentModel department) async {
+    final isNameDup = await _repo.isDepartmentNameDuplicate(
       department.companyId,
       department.departmentName,
       excludeId: department.departmentId.isNotEmpty ? department.departmentId : null,
     );
+    if (isNameDup) return 'Department with this name already exists.';
 
-    if (isDuplicate) return false;
+    final isCodeDup = await _repo.isDepartmentCodeDuplicate(
+      department.companyId,
+      department.departmentCode,
+      excludeId: department.departmentId.isNotEmpty ? department.departmentId : null,
+    );
+    if (isCodeDup) return 'Department with this code already exists.';
 
     await _repo.saveDepartment(department);
     await loadDepartments();
-    return true;
+    return 'success';
   }
 
   Future<void> deleteDepartment(String departmentId) async {
@@ -1026,9 +1061,10 @@ class AdminDesignationsNotifier extends StateNotifier<AsyncValue<List<Designatio
   }
 
   Future<bool> saveDesignation(DesignationModel designation) async {
-    final isDuplicate = await _repo.isDesignationNameDuplicate(
+    final isDuplicate = await _repo.isDesignationDuplicate(
       designation.companyId,
       designation.designationName,
+      designation.departmentId,
       excludeId: designation.designationId.isNotEmpty ? designation.designationId : null,
     );
 
@@ -1058,6 +1094,63 @@ class AdminDesignationsNotifier extends StateNotifier<AsyncValue<List<Designatio
 final adminDesignationsProvider = StateNotifierProvider<AdminDesignationsNotifier, AsyncValue<List<DesignationModel>>>((ref) {
   final repo = ref.watch(companyAdminRepositoryProvider);
   return AdminDesignationsNotifier(repo, ref);
+});
+
+// ==========================================
+// ROLE MANAGEMENT NOTIFIER
+// ==========================================
+class AdminRolesNotifier extends StateNotifier<AsyncValue<List<RoleModel>>> {
+  final CompanyAdminRepository _repo;
+  final Ref _ref;
+
+  AdminRolesNotifier(this._repo, this._ref) : super(const AsyncValue.loading()) {
+    loadRoles();
+  }
+
+  Future<void> loadRoles() async {
+    final user = _ref.read(authProvider).user;
+    if (user == null) return;
+
+    if (!state.hasValue) state = const AsyncValue.loading();
+    try {
+      final list = await _repo.getRoles(user.companyId);
+      state = AsyncValue.data(list);
+    } catch (e, stack) {
+      state = AsyncValue.error(AppErrorHandler.parseError(e, stack), stack);
+    }
+  }
+
+  Future<bool> saveRole(RoleModel role) async {
+    final existing = state.value ?? [];
+    final inputName = role.roleName.trim().toLowerCase();
+
+    final isDuplicate = existing.any((r) =>
+        r.roleId != role.roleId &&
+        r.departmentId == role.departmentId &&
+        r.designationId == role.designationId &&
+        r.roleName.trim().toLowerCase() == inputName);
+
+    if (isDuplicate) return false;
+
+    await _repo.saveRole(role);
+    await loadRoles();
+    return true;
+  }
+
+  Future<void> deleteRole(String roleId) async {
+    await _repo.deleteRole(roleId);
+    await loadRoles();
+  }
+
+  Future<void> restoreRole(String roleId) async {
+    await _repo.restoreRole(roleId);
+    await loadRoles();
+  }
+}
+
+final adminRolesProvider = StateNotifierProvider<AdminRolesNotifier, AsyncValue<List<RoleModel>>>((ref) {
+  final repo = ref.watch(companyAdminRepositoryProvider);
+  return AdminRolesNotifier(repo, ref);
 });
 
 // ==========================================
@@ -1737,7 +1830,7 @@ class OverrideRequestsNotifier extends StateNotifier<OverrideRequestsState> {
     final user = _ref.read(authProvider).user;
     try {
       debugPrint('[OVERRIDE] resolveAttendanceCorrection: attendanceId=$attendanceId status=$status');
-      await _repo.updateAttendanceCorrection(attendanceId, status);
+      await _repo.updateAttendanceCorrection(attendanceId, status, adminUid: user?.uid, adminName: user?.name);
       debugPrint('[OVERRIDE] resolveAttendanceCorrection: SUCCESS');
       if (user != null) {
         await _repo.logEmployeeActivity(
@@ -1861,12 +1954,13 @@ class AdminEmployeeDocumentsNotifier extends StateNotifier<AsyncValue<List<Emplo
     final user = _ref.read(authProvider).user;
     if (user == null) return;
 
+    if (!mounted) return;
     state = const AsyncValue.loading();
     try {
       final list = await _repo.getEmployeeDocuments(user.companyId, _employeeId);
-      state = AsyncValue.data(list);
+      if (mounted) state = AsyncValue.data(list);
     } catch (e, stack) {
-      state = AsyncValue.error(AppErrorHandler.parseError(e, stack), stack);
+      if (mounted) state = AsyncValue.error(AppErrorHandler.parseError(e, stack), stack);
     }
   }
 

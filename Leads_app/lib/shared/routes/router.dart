@@ -394,6 +394,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ESSLeaveScreen(),
       ),
       GoRoute(
+        path: '/ess/leaves',
+        builder: (context, state) => const ESSLeaveScreen(),
+      ),
+      GoRoute(
         path: '/ess/attendance',
         builder: (context, state) => const ESSAttendanceScreen(),
       ),
@@ -558,7 +562,21 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/company-admin/attendance-settings',
+        builder: (context, state) => const PermissionGuard(
+          permission: 'settings.manage',
+          child: AttendanceSettingsScreen(),
+        ),
+      ),
+      GoRoute(
         path: '/company-admin/overtime',
+        builder: (context, state) => const PermissionGuard(
+          permission: 'settings.manage',
+          child: OvertimeSettingsScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/company-admin/overtime-settings',
         builder: (context, state) => const PermissionGuard(
           permission: 'settings.manage',
           child: OvertimeSettingsScreen(),
@@ -648,7 +666,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/company-admin/approvals',
         builder: (context, state) => const PermissionGuard(
-          permission: 'leave.approve',
+          permissions: ['attendance.approve', 'leave.approve', 'settings.manage'],
+          child: OverrideApprovalScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/company-admin/override-approval',
+        builder: (context, state) => const PermissionGuard(
+          permissions: ['attendance.approve', 'leave.approve', 'settings.manage'],
           child: OverrideApprovalScreen(),
         ),
       ),

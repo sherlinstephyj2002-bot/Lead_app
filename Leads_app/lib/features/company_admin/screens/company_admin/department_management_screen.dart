@@ -428,15 +428,6 @@ class _DepartmentManagementScreenState extends ConsumerState<DepartmentManagemen
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 12),
-                                Expanded(
-                                  child: Text(
-                                    dept.description.isNotEmpty ? dept.description : 'No description provided.',
-                                    style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
                                 Divider(color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9), height: 16),
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -676,16 +667,6 @@ class _DepartmentManagementScreenState extends ConsumerState<DepartmentManagemen
                         validator: (v) => (v == null || v.trim().isEmpty) ? 'Code is required' : null,
                       ),
                       const SizedBox(height: 16),
-                      TextFormField(
-                        controller: descCtrl,
-                        decoration: InputDecoration(
-                          labelText: 'Description',
-                          prefixIcon: const Icon(Icons.description_outlined, color: Color(0xFF5B4CF0)),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        maxLines: 3,
-                      ),
-                      const SizedBox(height: 16),
                       DropdownButtonFormField<String>(
                         value: selectedManagerId,
                         decoration: InputDecoration(
@@ -790,15 +771,15 @@ class _DepartmentManagementScreenState extends ConsumerState<DepartmentManagemen
                             );
 
                             try {
-                              final success = await ref.read(adminDepartmentsProvider.notifier).saveDepartment(newDept);
+                              final result = await ref.read(adminDepartmentsProvider.notifier).saveDepartment(newDept);
                               if (context.mounted) {
-                                if (success) {
+                                if (result == 'success') {
                                   Navigator.pop(ctx);
                                   AppNotification.showSuccess(context, 'Department saved successfully.');
                                 } else {
                                   setModalState(() { isSubmitting = false; });
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('A department with this name already exists in this company.'), backgroundColor: Colors.red),
+                                    SnackBar(content: Text(result), backgroundColor: Colors.red),
                                   );
                                 }
                               }

@@ -251,7 +251,11 @@ class DashboardScreen extends ConsumerWidget {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     onSelected: (val) async {
                       if (val == 'profile') {
-                        context.push('/profile');
+                        if (user.role == UserRoles.employee) {
+                          context.push('/ess/profile');
+                        } else {
+                          context.push('/profile');
+                        }
                       } else if (val == 'settings') {
                         context.push('/settings');
                       } else if (val == 'logout') {
@@ -1335,6 +1339,13 @@ class DashboardScreen extends ConsumerWidget {
         {'title': 'Settings', 'icon': Icons.settings_rounded, 'color': const Color(0xFF6366F1), 'route': '/settings'},
         {'title': 'More', 'icon': Icons.grid_view_rounded, 'color': const Color(0xFF64748B), 'route': '/main?tab=4'},
       ];
+    } else if (userRole == UserRoles.employee) {
+      actions = [
+        {'title': 'Attendance', 'icon': Icons.calendar_today_rounded, 'color': const Color(0xFF3B82F6), 'route': '/ess/attendance'},
+        {'title': 'My Payslips', 'icon': Icons.receipt_long_rounded, 'color': const Color(0xFF10B981), 'route': '/ess/payslips'},
+        {'title': 'Notifications', 'icon': Icons.notifications_active_rounded, 'color': const Color(0xFFF59E0B), 'route': '/notifications'},
+        {'title': 'My Profile', 'icon': Icons.person_rounded, 'color': const Color(0xFF818CF8), 'route': '/ess/profile'},
+      ];
     } else {
       final canRecordAttendance = UserRoles.allowsPersonalAttendance(userRole);
       actions = [
@@ -1736,12 +1747,53 @@ class DashboardScreen extends ConsumerWidget {
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('Location Error'),
-            content: Text(e.toString()),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Color(0xFFF59E0B)),
+                SizedBox(width: 8),
+                Text('Attendance Punch Failed', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Unable to complete attendance punch due to a technical/GPS issue.',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  e.toString(),
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'You can retry the punch or submit an Attendance Override Request for supervisor review.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                ),
+              ],
+            ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('OK'),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _handleDashboardCheckIn(context, ref);
+                },
+                child: const Text('Retry Punch'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  context.push('/ess/attendance');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF5B4CF0),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: const Text('Request Override'),
               ),
             ],
           ),
@@ -2839,39 +2891,32 @@ class DashboardScreen extends ConsumerWidget {
     required PermissionService permService,
     required bool isDark,
   }) {
-    final List<Map<String, dynamic>> actions = [];
-
-    if (permService.hasPermission('task_view')) {
-      actions.add({
-        'title': 'My Tasks',
-        'icon': Icons.assignment_rounded,
+    final List<Map<String, dynamic>> actions = [
+      {
+        'title': 'Attendance',
+        'icon': Icons.fact_check_rounded,
         'color': const Color(0xFF5B4CF0),
-        'route': '/tasks',
-      });
-    }
-
-    actions.add({
-      'title': 'My Profile',
-      'icon': Icons.person_rounded,
-      'color': const Color(0xFF10B981),
-      'route': '/profile',
-    });
-
-    if (permService.hasPermission('followup_view')) {
-      actions.add({
-        'title': 'My Follow-ups',
-        'icon': Icons.phone_callback_rounded,
+        'route': '/main?tab=1',
+      },
+      {
+        'title': 'My Payslips',
+        'icon': Icons.payments_rounded,
+        'color': const Color(0xFF10B981),
+        'route': '/main?tab=2',
+      },
+      {
+        'title': 'Notifications',
+        'icon': Icons.notifications_rounded,
+        'color': const Color(0xFFF59E0B),
+        'route': '/main?tab=3',
+      },
+      {
+        'title': 'My Profile',
+        'icon': Icons.person_rounded,
         'color': const Color(0xFF8B5CF6),
-        'route': '/followups',
-      });
-    }
-
-    actions.add({
-      'title': 'Announcements',
-      'icon': Icons.campaign_rounded,
-      'color': const Color(0xFFF59E0B),
-      'route': '/company-admin/announcements',
-    });
+        'route': '/profile',
+      },
+    ];
 
     if (actions.isEmpty) return const SizedBox.shrink();
 

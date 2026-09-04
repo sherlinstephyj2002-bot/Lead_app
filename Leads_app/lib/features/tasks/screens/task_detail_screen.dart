@@ -5,6 +5,7 @@ import '../../../shared/models/task_model.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../constants/user_roles.dart';
 import '../../../shared/utils/app_notification.dart';
+import '../../../shared/services/app_error_handler.dart';
 
 class TaskDetailScreen extends ConsumerWidget {
   final TaskModel task;
@@ -365,9 +366,7 @@ class TaskDetailScreen extends ConsumerWidget {
                 }
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e')),
-                  );
+                  AppNotification.showError(context, AppErrorHandler.parseError(e));
                 }
               }
             },
@@ -582,13 +581,10 @@ class _TaskFormScreenState extends ConsumerState<TaskFormScreen> {
                               _selectedEmpName,
                               _selectedEmpId,
                             );
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Task updated successfully!')),
-                              );
+                             if (context.mounted) {
                               Navigator.pop(context);
                               Navigator.pop(context);
+                              AppNotification.showSuccess(context, 'Task updated successfully!');
                             }
                           } else {
                             await ref.read(tasksProvider.notifier).addTask(
@@ -599,18 +595,13 @@ class _TaskFormScreenState extends ConsumerState<TaskFormScreen> {
                               _selectedEmpId,
                             );
                             if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Task created successfully!')),
-                              );
                               Navigator.pop(context);
+                              AppNotification.showSuccess(context, 'Task created successfully!');
                             }
                           }
                         } catch (e) {
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error: $e')),
-                            );
+                            AppNotification.showError(context, AppErrorHandler.parseError(e));
                           }
                         } finally {
                           if (mounted) {

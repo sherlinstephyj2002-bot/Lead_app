@@ -22,7 +22,7 @@ class _OverrideApprovalScreenState extends ConsumerState<OverrideApprovalScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -34,6 +34,9 @@ class _OverrideApprovalScreenState extends ConsumerState<OverrideApprovalScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_tabController.length != 5) {
+      _tabController = TabController(length: 5, vsync: this);
+    }
     final state = ref.watch(overrideRequestsProvider);
     final totalPendingCount = state.pendingLeaves.length + state.pendingExpenses.length + state.pendingCorrections.length + state.pendingEmployeeRequests.length;
 
@@ -313,9 +316,10 @@ class _OverrideApprovalScreenState extends ConsumerState<OverrideApprovalScreen>
                                     isScrollable: true,
                                     labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                     tabs: [
+                                      Tab(text: 'Corrections (${state.pendingCorrections.length})'),
+                                      Tab(text: 'Auto Absent Review'),
                                       Tab(text: 'Leaves (${state.pendingLeaves.length})'),
                                       Tab(text: 'Expenses (${state.pendingExpenses.length})'),
-                                      Tab(text: 'Corrections (${state.pendingCorrections.length})'),
                                       Tab(text: 'HR Requests (${state.pendingEmployeeRequests.length})'),
                                     ],
                                   ),
@@ -347,9 +351,10 @@ class _OverrideApprovalScreenState extends ConsumerState<OverrideApprovalScreen>
                                       isScrollable: true,
                                       labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                       tabs: [
+                                        Tab(text: 'Corrections (${state.pendingCorrections.length})'),
+                                        Tab(text: 'Auto Absent Review'),
                                         Tab(text: 'Leaves (${state.pendingLeaves.length})'),
                                         Tab(text: 'Expenses (${state.pendingExpenses.length})'),
-                                        Tab(text: 'Corrections (${state.pendingCorrections.length})'),
                                         Tab(text: 'HR Requests (${state.pendingEmployeeRequests.length})'),
                                       ],
                                     ),
@@ -377,9 +382,10 @@ class _OverrideApprovalScreenState extends ConsumerState<OverrideApprovalScreen>
                         child: TabBarView(
                           controller: _tabController,
                           children: [
+                            _buildCorrectionsTab(state),
+                            _buildAutoAbsentTab(state),
                             _buildLeavesTab(state),
                             _buildExpensesTab(state),
-                            _buildCorrectionsTab(state),
                             _buildHRRequestsTab(state),
                           ],
                         ),
@@ -574,6 +580,33 @@ class _OverrideApprovalScreenState extends ConsumerState<OverrideApprovalScreen>
           badgeColor: const Color(0xFFD97706),
           timestamp: date,
           reason: 'Manual override for attendance correction.',
+          onReject: () => ref.read(overrideRequestsProvider.notifier).resolveAttendanceCorrection(att.attendanceId, 'Absent'),
+          onApprove: () => ref.read(overrideRequestsProvider.notifier).resolveAttendanceCorrection(att.attendanceId, 'Present'),
+        );
+      },
+    );
+  }
+
+  Widget _buildAutoAbsentTab(OverrideRequestsState state) {
+    final autoAbsentList = state.pendingCorrections.where((att) => att.isAutoAbsent || att.correctionReason?.contains('Auto Absent') == true).toList();
+    if (autoAbsentList.isEmpty) {
+      return _buildEmptyState('No pending auto absent review records.');
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(20),
+      itemCount: autoAbsentList.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final att = autoAbsentList[index];
+        final date = DateFormat('MMM dd, yyyy • hh:mm a').format(att.checkInTime);
+
+        return _buildRequestRow(
+          name: att.employeeName,
+          department: 'Auto Absent Review',
+          badgeText: 'SYSTEM AUTO ABSENT',
+          badgeColor: const Color(0xFFEF4444),
+          timestamp: date,
+          reason: att.correctionReason ?? 'System auto absent triggered due to missed check-in threshold.',
           onReject: () => ref.read(overrideRequestsProvider.notifier).resolveAttendanceCorrection(att.attendanceId, 'Absent'),
           onApprove: () => ref.read(overrideRequestsProvider.notifier).resolveAttendanceCorrection(att.attendanceId, 'Present'),
         );

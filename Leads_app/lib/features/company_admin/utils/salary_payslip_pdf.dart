@@ -4,6 +4,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import '../models/salary_payslip_model.dart';
+import '../../../shared/utils/pdf_font_helper.dart';
+import '../../../shared/utils/app_formatter.dart';
 
 /// Generates and handles PDF operations for a salary payslip.
 class SalaryPayslipPdf {
@@ -15,8 +17,10 @@ class SalaryPayslipPdf {
   /// Builds and returns the pdf.Document for a payslip.
   static Future<pw.Document> generate(
       SalaryPayslipModel p, String companyName) async {
+    final theme = await PdfFontHelper.getPdfTheme();
     final doc = pw.Document(
       title: 'Payslip – ${p.employeeName} – ${p.payrollPeriod}',
+      theme: theme,
     );
     doc.addPage(
       pw.MultiPage(
@@ -206,17 +210,17 @@ class SalaryPayslipPdf {
 
   static pw.Widget _earningsDeductionsTable(SalaryPayslipModel p) {
     final earningRows = <List<String>>[
-      ['Basic Salary', _currFmt.format(p.basicSalary)],
-      ...p.earnings.entries.map((e) => [e.key, _currFmt.format(e.value)]),
-      if (p.bonus > 0) ['Bonus', _currFmt.format(p.bonus)],
-      if (p.overtime > 0) ['Overtime', _currFmt.format(p.overtime)],
-      if (p.incentive > 0) ['Incentive', _currFmt.format(p.incentive)],
+      ['Basic Salary', AppFormatter.formatCurrency(p.basicSalary)],
+      ...p.earnings.entries.map((e) => [e.key, AppFormatter.formatCurrency(e.value)]),
+      if (p.bonus > 0) ['Bonus', AppFormatter.formatCurrency(p.bonus)],
+      if (p.overtime > 0) ['Overtime', AppFormatter.formatCurrency(p.overtime)],
+      if (p.incentive > 0) ['Incentive', AppFormatter.formatCurrency(p.incentive)],
     ];
 
     final deductionRows = <List<String>>[
-      ...p.deductions.entries.map((e) => [e.key, _currFmt.format(e.value)]),
+      ...p.deductions.entries.map((e) => [e.key, AppFormatter.formatCurrency(e.value)]),
       if (p.otherDeduction > 0)
-        ['Other Deductions', _currFmt.format(p.otherDeduction)],
+        ['Other Deductions', AppFormatter.formatCurrency(p.otherDeduction)],
     ];
 
     final maxRows =
@@ -239,7 +243,7 @@ class SalaryPayslipPdf {
                     earningRows[i][0], earningRows[i][1], i);
               }),
               _tableTotalRow(
-                  'Total Earnings', _currFmt.format(p.totalEarnings)),
+                  'Total Earnings', AppFormatter.formatCurrency(p.totalEarnings)),
             ],
           ),
         ),
@@ -256,7 +260,7 @@ class SalaryPayslipPdf {
                     deductionRows[i][0], deductionRows[i][1], i);
               }),
               _tableTotalRow(
-                  'Total Deductions', _currFmt.format(p.totalDeductions)),
+                  'Total Deductions', AppFormatter.formatCurrency(p.totalDeductions)),
             ],
           ),
         ),
@@ -339,7 +343,7 @@ class SalaryPayslipPdf {
                       color: const PdfColor.fromInt(0xB3FFFFFF),
                       fontSize: 11)),
               pw.Text(
-                _currFmt.format(p.netSalary),
+                AppFormatter.formatCurrency(p.netSalary),
                 style: pw.TextStyle(
                   color: PdfColors.white,
                   fontSize: 22,
@@ -354,14 +358,14 @@ class SalaryPayslipPdf {
               pw.Text('Gross Salary',
                   style: pw.TextStyle(
                       color: const PdfColor.fromInt(0xB3FFFFFF), fontSize: 9)),
-              pw.Text(_currFmt.format(p.grossSalary),
+              pw.Text(AppFormatter.formatCurrency(p.grossSalary),
                   style: pw.TextStyle(
                       color: PdfColors.white, fontSize: 11)),
               pw.SizedBox(height: 4),
               pw.Text('Total Deductions',
                   style: pw.TextStyle(
                       color: const PdfColor.fromInt(0xB3FFFFFF), fontSize: 9)),
-              pw.Text(_currFmt.format(p.totalDeductions),
+              pw.Text(AppFormatter.formatCurrency(p.totalDeductions),
                   style: pw.TextStyle(
                       color: PdfColors.white, fontSize: 11)),
             ],

@@ -59,18 +59,27 @@ class AttendanceRepository {
       final startOfDay = DateTime(now.year, now.month, now.day);
       final endOfDay = DateTime(now.year, now.month, now.day, 23, 59, 59);
 
-      final snap = await _firestore
-          .collection(FirestoreCollections.attendance)
-          .where('companyId', isEqualTo: companyId)
-          .where(
-            'checkInTime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
-          )
-          .where(
-            'checkInTime',
-            isLessThanOrEqualTo: Timestamp.fromDate(endOfDay),
-          )
-          .get();
+      QuerySnapshot<Map<String, dynamic>> snap;
+      try {
+        snap = await _firestore
+            .collection(FirestoreCollections.attendance)
+            .where('companyId', isEqualTo: companyId)
+            .where(
+              'checkInTime',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay),
+            )
+            .where(
+              'checkInTime',
+              isLessThanOrEqualTo: Timestamp.fromDate(endOfDay),
+            )
+            .get();
+      } catch (e) {
+        // Fallback to memory filtering if Firestore composite index is missing or building
+        snap = await _firestore
+            .collection(FirestoreCollections.attendance)
+            .where('companyId', isEqualTo: companyId)
+            .get();
+      }
 
       if (snap.docs.isEmpty) return null;
 
@@ -80,7 +89,11 @@ class AttendanceRepository {
         final logUserEmpId = (data['userEmployeeId'] ?? data['employeeCode'] ?? '').toString();
 
         if (logEmpId == employeeId || logUserEmpId == employeeId) {
-          return AttendanceModel.fromMap(data);
+          final model = AttendanceModel.fromMap(data);
+          if (model.checkInTime.isAfter(startOfDay.subtract(const Duration(seconds: 1))) &&
+              model.checkInTime.isBefore(endOfDay.add(const Duration(seconds: 1)))) {
+            return model;
+          }
         }
       }
 

@@ -12,6 +12,10 @@ import '../../../shared/providers/providers.dart';
 import '../../../constants/user_roles.dart';
 import 'leave_list_screen.dart';
 import '../../company_admin/providers/company_admin_providers.dart';
+import '../../../shared/utils/app_notification.dart';
+import '../../../shared/services/app_error_handler.dart';
+
+import '../../../shared/services/attendance_automation_service.dart';
 
 class AttendanceScreen extends ConsumerStatefulWidget {
   const AttendanceScreen({super.key});
@@ -68,13 +72,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Fetching current GPS coordinates...'),
-            duration: Duration(seconds: 1),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppNotification.showInfo(context, 'Fetching current GPS coordinates...');
       }
 
       Position position = await Geolocator.getCurrentPosition(
@@ -139,6 +137,10 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
     Future.microtask(() {
       ref.read(attendanceProvider.notifier).loadLogs();
       ref.read(leavesProvider.notifier).loadLeaves();
+      final user = ref.read(authProvider).user;
+      if (user != null && user.companyId.isNotEmpty) {
+        AttendanceAutomationService.evaluateCompanyAutomation(user.companyId);
+      }
     });
   }
 
@@ -837,9 +839,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
             onPressed: () async {
               final reason = reasonCtrl.text.trim();
               if (reason.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please enter a correction reason.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-                );
+                AppNotification.showError(context, 'Please enter a correction reason.');
                 return;
               }
               Navigator.pop(ctx);
@@ -864,15 +864,11 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
                 await ref.read(attendanceProvider.notifier).loadLogs();
 
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Correction request submitted successfully.'), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating),
-                  );
+                  AppNotification.showSuccess(context, 'Correction request submitted successfully.');
                 }
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to submit correction: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-                  );
+                  AppNotification.showError(context, AppErrorHandler.parseError(e));
                 }
               }
             },

@@ -85,14 +85,32 @@ class _GeneratePayrollDialogState extends ConsumerState<GeneratePayrollDialog> {
       _assignedStructure = null;
     });
 
-    if (emp != null && emp.salaryStructureId != null) {
-      final structures = ref.read(adminSalaryStructuresProvider).value ?? [];
+    if (emp == null) return;
+
+    final structures = ref.read(adminSalaryStructuresProvider).value ?? [];
+    if (structures.isEmpty) return;
+
+    SalaryStructureModel? chosen;
+    if (emp.salaryStructureId != null && emp.salaryStructureId!.isNotEmpty) {
       final match = structures.where((s) => s.structureId == emp.salaryStructureId);
-      if (match.isNotEmpty) {
-        setState(() {
-          _assignedStructure = match.first;
-        });
-      }
+      if (match.isNotEmpty) chosen = match.first;
+    }
+    if (chosen == null) {
+      final active = structures.where((s) => s.status.toLowerCase() == 'active');
+      if (active.isNotEmpty) chosen = active.first;
+    }
+
+    if (chosen != null) {
+      setState(() {
+        _assignedStructure = chosen;
+        if (chosen!.bonus > 0 && (_bonusController.text.isEmpty || _bonusController.text == '0')) {
+          _bonusController.text = chosen.bonus % 1 == 0 ? chosen.bonus.toInt().toString() : chosen.bonus.toString();
+        }
+        if (chosen.incentive > 0 && (_incentivesController.text.isEmpty || _incentivesController.text == '0')) {
+          final incVal = chosen.basic * (chosen.incentive / 100.0);
+          _incentivesController.text = incVal % 1 == 0 ? incVal.toInt().toString() : incVal.toString();
+        }
+      });
     }
   }
 
@@ -149,9 +167,7 @@ class _GeneratePayrollDialogState extends ConsumerState<GeneratePayrollDialog> {
         companyId: currentUser.companyId,
         employeeId: _selectedEmployee!.uid,
         employeeName: _selectedEmployee!.name,
-        employeeCode: _selectedEmployee!.phoneNumber != null && _selectedEmployee!.phoneNumber!.isNotEmpty 
-            ? _selectedEmployee!.phoneNumber 
-            : 'EMP-${_selectedEmployee!.uid.substring(0, 5).toUpperCase()}',
+        employeeCode: _selectedEmployee!.displayEmployeeId,
         department: _selectedEmployee!.department ?? 'General',
         designation: _selectedEmployee!.designation ?? 'Employee',
         salaryStructureId: _assignedStructure?.structureId,

@@ -16,6 +16,7 @@ import '../../../shared/providers/providers.dart';
 import '../../../shared/services/pdf_service.dart';
 import '../../../shared/services/file_download_service.dart';
 import '../../../shared/utils/csv_export_helper.dart';
+import '../../../shared/utils/app_formatter.dart';
 import '../../../shared/theme/app_responsive.dart';
 import '../../../constants/user_roles.dart';
 
@@ -68,9 +69,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           title: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Reports', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white, fontFamily: 'Outfit')),
+              Text('Reports & Analytics', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Colors.white, fontFamily: 'Outfit')),
               SizedBox(height: 2),
-              Text('Business insights at a glance', style: TextStyle(fontSize: 12, color: Colors.white70)),
+              Text('Comprehensive business & workforce analytics', style: TextStyle(fontSize: 12, color: Colors.white70)),
             ],
           ),
           bottom: TabBar(

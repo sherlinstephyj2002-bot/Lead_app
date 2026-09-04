@@ -15,6 +15,7 @@ import '../../company_admin/screens/company_admin/company_admin_menu_screen.dart
 import '../../../shared/providers/providers.dart';
 import '../../../shared/providers/permissions_provider.dart';
 import '../../leads/screens/lead_list_screen.dart';
+import '../../notifications/screens/notification_center_screen.dart';
 import '../../../constants/user_roles.dart';
 
 class MainScreen extends ConsumerStatefulWidget {
@@ -78,8 +79,24 @@ class _MainScreenState extends ConsumerState<MainScreen> {
       // 6. More (Secondary Settings & Utilities)
       screens.add(const MoreScreen());
       navItems.add({'icon': Icons.grid_view_rounded, 'label': 'More'});
+    } else if (user?.role == UserRoles.employee) {
+      // Clean, Minimal Employee 5-Tab Navigation
+      screens.add(const DashboardScreen());
+      navItems.add({'icon': Icons.home_rounded, 'label': 'Home'});
+
+      screens.add(const ESSAttendanceScreen());
+      navItems.add({'icon': Icons.fact_check_rounded, 'label': 'Attendance'});
+
+      screens.add(const ESSPayslipsScreen());
+      navItems.add({'icon': Icons.payments_rounded, 'label': 'Payslips'});
+
+      screens.add(const NotificationCenterScreen());
+      navItems.add({'icon': Icons.notifications_rounded, 'label': 'Notifications'});
+
+      screens.add(const MoreScreen());
+      navItems.add({'icon': Icons.grid_view_rounded, 'label': 'More'});
     } else {
-      // Standard Non-Admin User Navigation Tabs based on Permissions
+      // Standard Non-Admin Manager/HR Navigation Tabs based on Permissions
       screens.add(const DashboardScreen());
       navItems.add({'icon': Icons.home_rounded, 'label': 'Home'});
 

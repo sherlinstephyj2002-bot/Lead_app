@@ -4,6 +4,7 @@ import 'package:csv/csv.dart';
 import '../../../shared/services/file_download_service.dart';
 import '../../../shared/utils/csv_export_helper.dart';
 import '../../../shared/utils/app_notification.dart';
+import '../../../shared/services/app_error_handler.dart';
 
 class CsvExportService {
   /// Exports raw rows to CSV after running safety sanitization on all values.
@@ -38,13 +39,7 @@ class CsvExportService {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to export CSV: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        AppNotification.showError(context, AppErrorHandler.parseError(e));
       }
     }
   }

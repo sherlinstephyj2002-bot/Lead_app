@@ -23,6 +23,8 @@ class AttendanceModel {
   final double? overtimeHours;
   final bool? earlyExit;
   final String? correctionReason;
+  final String? checkoutSource; // 'System Auto Checkout', 'Manual', etc.
+  final bool isAutoAbsent;
 
   AttendanceModel({
     required this.attendanceId,
@@ -47,6 +49,8 @@ class AttendanceModel {
     this.overtimeHours,
     this.earlyExit,
     this.correctionReason,
+    this.checkoutSource,
+    this.isAutoAbsent = false,
   });
 
   static DateTime _parseDate(dynamic v) {
@@ -89,6 +93,8 @@ class AttendanceModel {
       overtimeHours: map['overtimeHours'] != null ? (map['overtimeHours'] as num).toDouble() : null,
       earlyExit: map['earlyExit'],
       correctionReason: map['correctionReason'],
+      checkoutSource: map['checkoutSource'],
+      isAutoAbsent: (map['isAutoAbsent'] as bool?) ?? false,
     );
   }
 
@@ -116,6 +122,8 @@ class AttendanceModel {
       'overtimeHours': overtimeHours,
       'earlyExit': earlyExit,
       'correctionReason': correctionReason,
+      'checkoutSource': checkoutSource,
+      'isAutoAbsent': isAutoAbsent,
     };
   }
 
@@ -142,6 +150,8 @@ class AttendanceModel {
     double? overtimeHours,
     bool? earlyExit,
     String? correctionReason,
+    String? checkoutSource,
+    bool? isAutoAbsent,
   }) {
     return AttendanceModel(
       attendanceId: attendanceId ?? this.attendanceId,
@@ -166,6 +176,8 @@ class AttendanceModel {
       overtimeHours: overtimeHours ?? this.overtimeHours,
       earlyExit: earlyExit ?? this.earlyExit,
       correctionReason: correctionReason ?? this.correctionReason,
+      checkoutSource: checkoutSource ?? this.checkoutSource,
+      isAutoAbsent: isAutoAbsent ?? this.isAutoAbsent,
     );
   }
 }

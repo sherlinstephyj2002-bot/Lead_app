@@ -17,6 +17,8 @@ class UserModel {
   final String? department;
   final String? departmentId;
   final String? designationId;
+  final String? roleId;
+  final String? jobRole;
   final String? managerId;
   final DateTime? joiningDate;
   final String? employmentType;
@@ -53,6 +55,20 @@ class UserModel {
   final String? ifscCode;
   final String? panNumber;
   final String? aadhaarNumber;
+  final List<String> managedDepartmentIds;
+  final List<String> managedDepartmentNames;
+
+  // Attendance Automation Settings
+  final String employeeWorkType; // 'office' (Normal Office Employee) or 'field' (Field Employee)
+  final List<String> attendanceNotificationRecipients; // ['hr', 'reporting_manager', 'team_leader', 'company_admin']
+  final bool enableCheckInReminder;
+  final int checkInGraceMinutes;
+  final bool enableAutoAbsent;
+  final int autoAbsentGraceMinutes;
+  final bool enableCheckOutReminder;
+  final int checkOutGraceMinutes;
+  final bool enableAutoCheckout;
+  final int autoCheckoutGraceMinutes;
 
   UserModel({
     required this.uid,
@@ -70,6 +86,8 @@ class UserModel {
     this.department,
     this.departmentId,
     this.designationId,
+    this.roleId,
+    this.jobRole,
     this.managerId,
     this.joiningDate,
     this.employmentType,
@@ -106,6 +124,18 @@ class UserModel {
     this.ifscCode,
     this.panNumber,
     this.aadhaarNumber,
+    this.managedDepartmentIds = const [],
+    this.managedDepartmentNames = const [],
+    this.employeeWorkType = 'office',
+    this.attendanceNotificationRecipients = const ['hr', 'reporting_manager'],
+    this.enableCheckInReminder = true,
+    this.checkInGraceMinutes = 30,
+    this.enableAutoAbsent = true,
+    this.autoAbsentGraceMinutes = 120,
+    this.enableCheckOutReminder = true,
+    this.checkOutGraceMinutes = 30,
+    this.enableAutoCheckout = false,
+    this.autoCheckoutGraceMinutes = 180,
   });
 
   /// Dedicated Admin Code for Company Admin (e.g., ADM-JAS001)
@@ -209,6 +239,8 @@ class UserModel {
       department: map['department'],
       departmentId: map['departmentId'],
       designationId: map['designationId'],
+      roleId: map['roleId'],
+      jobRole: map['jobRole'] ?? map['roleTitle'],
       managerId: map['managerId'],
       joiningDate: map['joiningDate'] != null
           ? (map['joiningDate'] as Timestamp).toDate()
@@ -251,6 +283,27 @@ class UserModel {
       ifscCode: map['ifscCode'],
       panNumber: map['panNumber'],
       aadhaarNumber: map['aadhaarNumber'],
+      managedDepartmentIds: (map['managedDepartmentIds'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      managedDepartmentNames: (map['managedDepartmentNames'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      employeeWorkType: map['employeeWorkType'] ?? 'office',
+      attendanceNotificationRecipients: (map['attendanceNotificationRecipients'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const ['hr', 'reporting_manager'],
+      enableCheckInReminder: (map['enableCheckInReminder'] as bool?) ?? true,
+      checkInGraceMinutes: (map['checkInGraceMinutes'] as num?)?.toInt() ?? 30,
+      enableAutoAbsent: (map['enableAutoAbsent'] as bool?) ?? true,
+      autoAbsentGraceMinutes: (map['autoAbsentGraceMinutes'] as num?)?.toInt() ?? 120,
+      enableCheckOutReminder: (map['enableCheckOutReminder'] as bool?) ?? true,
+      checkOutGraceMinutes: (map['checkOutGraceMinutes'] as num?)?.toInt() ?? 30,
+      enableAutoCheckout: (map['enableAutoCheckout'] as bool?) ?? (map['employeeWorkType'] == 'field'),
+      autoCheckoutGraceMinutes: (map['autoCheckoutGraceMinutes'] as num?)?.toInt() ?? 180,
     );
   }
 
@@ -272,6 +325,8 @@ class UserModel {
       'department': department,
       'departmentId': departmentId,
       'designationId': designationId,
+      'roleId': roleId,
+      'jobRole': jobRole,
       'managerId': managerId,
       'joiningDate': joiningDate != null ? Timestamp.fromDate(joiningDate!) : null,
       'employmentType': employmentType,
@@ -308,6 +363,18 @@ class UserModel {
       'ifscCode': ifscCode,
       'panNumber': panNumber,
       'aadhaarNumber': aadhaarNumber,
+      'managedDepartmentIds': managedDepartmentIds,
+      'managedDepartmentNames': managedDepartmentNames,
+      'employeeWorkType': employeeWorkType,
+      'attendanceNotificationRecipients': attendanceNotificationRecipients,
+      'enableCheckInReminder': enableCheckInReminder,
+      'checkInGraceMinutes': checkInGraceMinutes,
+      'enableAutoAbsent': enableAutoAbsent,
+      'autoAbsentGraceMinutes': autoAbsentGraceMinutes,
+      'enableCheckOutReminder': enableCheckOutReminder,
+      'checkOutGraceMinutes': checkOutGraceMinutes,
+      'enableAutoCheckout': enableAutoCheckout,
+      'autoCheckoutGraceMinutes': autoCheckoutGraceMinutes,
     };
   }
 
@@ -327,6 +394,8 @@ class UserModel {
     String? department,
     String? departmentId,
     String? designationId,
+    String? roleId,
+    String? jobRole,
     String? managerId,
     DateTime? joiningDate,
     String? employmentType,
@@ -363,6 +432,18 @@ class UserModel {
     String? ifscCode,
     String? panNumber,
     String? aadhaarNumber,
+    List<String>? managedDepartmentIds,
+    List<String>? managedDepartmentNames,
+    String? employeeWorkType,
+    List<String>? attendanceNotificationRecipients,
+    bool? enableCheckInReminder,
+    int? checkInGraceMinutes,
+    bool? enableAutoAbsent,
+    int? autoAbsentGraceMinutes,
+    bool? enableCheckOutReminder,
+    int? checkOutGraceMinutes,
+    bool? enableAutoCheckout,
+    int? autoCheckoutGraceMinutes,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -380,6 +461,8 @@ class UserModel {
       department: department ?? this.department,
       departmentId: departmentId ?? this.departmentId,
       designationId: designationId ?? this.designationId,
+      roleId: roleId ?? this.roleId,
+      jobRole: jobRole ?? this.jobRole,
       managerId: managerId ?? this.managerId,
       joiningDate: joiningDate ?? this.joiningDate,
       employmentType: employmentType ?? this.employmentType,
@@ -416,6 +499,18 @@ class UserModel {
       ifscCode: ifscCode ?? this.ifscCode,
       panNumber: panNumber ?? this.panNumber,
       aadhaarNumber: aadhaarNumber ?? this.aadhaarNumber,
+      managedDepartmentIds: managedDepartmentIds ?? this.managedDepartmentIds,
+      managedDepartmentNames: managedDepartmentNames ?? this.managedDepartmentNames,
+      employeeWorkType: employeeWorkType ?? this.employeeWorkType,
+      attendanceNotificationRecipients: attendanceNotificationRecipients ?? this.attendanceNotificationRecipients,
+      enableCheckInReminder: enableCheckInReminder ?? this.enableCheckInReminder,
+      checkInGraceMinutes: checkInGraceMinutes ?? this.checkInGraceMinutes,
+      enableAutoAbsent: enableAutoAbsent ?? this.enableAutoAbsent,
+      autoAbsentGraceMinutes: autoAbsentGraceMinutes ?? this.autoAbsentGraceMinutes,
+      enableCheckOutReminder: enableCheckOutReminder ?? this.enableCheckOutReminder,
+      checkOutGraceMinutes: checkOutGraceMinutes ?? this.checkOutGraceMinutes,
+      enableAutoCheckout: enableAutoCheckout ?? this.enableAutoCheckout,
+      autoCheckoutGraceMinutes: autoCheckoutGraceMinutes ?? this.autoCheckoutGraceMinutes,
     );
   }
 }

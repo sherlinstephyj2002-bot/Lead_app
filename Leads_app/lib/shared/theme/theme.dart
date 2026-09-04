@@ -49,7 +49,8 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        elevation: 6,
+        elevation: 4,
+        insetPadding: const EdgeInsets.only(bottom: 24, left: 48, right: 48),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
       cardTheme: CardThemeData(
@@ -162,7 +163,8 @@ class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        elevation: 6,
+        elevation: 4,
+        insetPadding: const EdgeInsets.only(bottom: 24, left: 48, right: 48),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
       cardTheme: CardThemeData(

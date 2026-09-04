@@ -7,6 +7,7 @@ import 'package:worktrack/shared/providers/export_queue_provider.dart';
 import 'package:worktrack/shared/services/file_download_service.dart';
 import 'package:worktrack/shared/utils/csv_export_helper.dart';
 import '../utils/app_notification.dart';
+import '../services/app_error_handler.dart';
 
 class ExportQueueSheet extends ConsumerStatefulWidget {
   const ExportQueueSheet({super.key});
@@ -50,9 +51,7 @@ class _ExportQueueSheetState extends ConsumerState<ExportQueueSheet> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download error: $e'), backgroundColor: Colors.red),
-        );
+        AppNotification.showError(context, AppErrorHandler.parseError(e));
       }
     }
   }

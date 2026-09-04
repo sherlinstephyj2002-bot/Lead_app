@@ -13,6 +13,7 @@ class ShiftModel {
   final double halfDayThresholdHours;
   final bool overtimeAllowed;
   final double overtimeStartAfterHours;
+  final double otLimitHours;
   final List<String> weeklyOffDays;
   final String status; // active, suspended, archived, deleted
   final DateTime createdAt;
@@ -24,6 +25,8 @@ class ShiftModel {
   int get lateTolerance => gracePeriodMinutes;
   int get earlyExitToleranceMinutes => 0;
   bool get overtimeEligible => overtimeAllowed;
+  double get otLimit => otLimitHours;
+  double get maxTotalWorkingTimeHours => overtimeAllowed ? (workingHours + otLimitHours) : workingHours;
 
   ShiftModel({
     required this.shiftId,
@@ -38,6 +41,7 @@ class ShiftModel {
     required this.halfDayThresholdHours,
     required this.overtimeAllowed,
     required this.overtimeStartAfterHours,
+    this.otLimitHours = 2.0,
     required this.weeklyOffDays,
     required this.status,
     required this.createdAt,
@@ -64,6 +68,9 @@ class ShiftModel {
       halfDayThresholdHours: map['halfDayThresholdHours'] != null ? (map['halfDayThresholdHours'] as num).toDouble() : 4.0,
       overtimeAllowed: map['overtimeAllowed'] ?? map['overtimeEligible'] ?? false,
       overtimeStartAfterHours: map['overtimeStartAfterHours'] != null ? (map['overtimeStartAfterHours'] as num).toDouble() : 9.0,
+      otLimitHours: map['otLimitHours'] != null 
+          ? (map['otLimitHours'] as num).toDouble() 
+          : (map['otLimit'] != null ? (map['otLimit'] as num).toDouble() : 2.0),
       weeklyOffDays: map['weeklyOffDays'] != null ? List<String>.from(map['weeklyOffDays']) : ['Sunday'],
       status: map['status'] ?? 'active',
       createdAt: map['createdAt'] != null 
@@ -94,6 +101,8 @@ class ShiftModel {
       'overtimeAllowed': overtimeAllowed,
       'overtimeEligible': overtimeAllowed, // Backwards compatibility
       'overtimeStartAfterHours': overtimeStartAfterHours,
+      'otLimitHours': otLimitHours,
+      'otLimit': otLimitHours, // Backwards compatibility
       'weeklyOffDays': weeklyOffDays,
       'status': status,
       'createdAt': createdAt.toIso8601String(),
@@ -114,6 +123,7 @@ class ShiftModel {
     double? halfDayThresholdHours,
     bool? overtimeAllowed,
     double? overtimeStartAfterHours,
+    double? otLimitHours,
     List<String>? weeklyOffDays,
     String? status,
     DateTime? createdAt,
@@ -132,6 +142,7 @@ class ShiftModel {
       halfDayThresholdHours: halfDayThresholdHours ?? this.halfDayThresholdHours,
       overtimeAllowed: overtimeAllowed ?? this.overtimeAllowed,
       overtimeStartAfterHours: overtimeStartAfterHours ?? this.overtimeStartAfterHours,
+      otLimitHours: otLimitHours ?? this.otLimitHours,
       weeklyOffDays: weeklyOffDays ?? this.weeklyOffDays,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,

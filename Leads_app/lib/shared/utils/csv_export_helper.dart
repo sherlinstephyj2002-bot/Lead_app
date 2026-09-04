@@ -1,9 +1,15 @@
 import 'package:intl/intl.dart';
+import 'app_formatter.dart';
 
 /// Helper class for sanitizing and formatting CSV values to ensure clean, accurate,
 /// and human-readable Excel rendering without formula injection, scientific notation (4.23E+09),
 /// or date column truncated '#####' rendering.
 class CsvExportHelper {
+  /// Formats currency for CSV/Excel export (e.g. ₹20,000.00).
+  static String formatCurrency(double? amount) {
+    return AppFormatter.formatCurrency(amount);
+  }
+
   /// Formats date and time cleanly as text `yyyy-MM-dd HH:mm:ss` (e.g., 2026-08-11 19:48:32).
   /// Prefixing with '\t' forces Excel to render as plain text, preventing Excel's Date-Type
   /// column overflow '#####' behavior while keeping full date and time visible.

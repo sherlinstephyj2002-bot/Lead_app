@@ -8,6 +8,7 @@ import 'task_detail_screen.dart';
 import '../../../constants/user_roles.dart';
 import '../../../features/company_admin/providers/company_admin_providers.dart';
 import '../../../shared/utils/app_notification.dart';
+import '../../../shared/services/app_error_handler.dart';
 
 class TaskListScreen extends ConsumerStatefulWidget {
   const TaskListScreen({super.key});
@@ -298,10 +299,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                         .read(tasksProvider.notifier)
                         .updateTaskStatus(task.taskId, 'In Progress');
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Task marked as In Progress.')),
-                      );
+                      AppNotification.showSuccess(context, 'Task marked as In Progress.');
                     }
                   },
                   icon: const Icon(Icons.timelapse_rounded, size: 15),
@@ -325,10 +323,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                         .read(tasksProvider.notifier)
                         .updateTaskStatus(task.taskId, 'Completed');
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Task marked as Completed.')),
-                      );
+                      AppNotification.showSuccess(context, 'Task marked as Completed.');
                     }
                   },
                   icon:
@@ -370,9 +365,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
   void _showReassignTaskDialog(BuildContext context, TaskModel task) {
     final employees = ref.read(adminEmployeesProvider).value ?? [];
     if (employees.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No employees found to reassign.')),
-      );
+      AppNotification.showError(context, 'No employees found to reassign.');
       return;
     }
 
@@ -421,9 +414,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                 );
                 if (dialogContext.mounted) {
                   Navigator.pop(dialogContext);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Task reassigned to ${targetEmp.name}.')),
-                  );
+                  AppNotification.showSuccess(context, 'Task reassigned to ${targetEmp.name}.');
                 }
               },
               child: const Text('Reassign'),
@@ -569,9 +560,7 @@ class _TaskListScreenState extends ConsumerState<TaskListScreen> {
                             }
                           } catch (e) {
                             if (dialogContext.mounted) {
-                              ScaffoldMessenger.of(dialogContext).showSnackBar(
-                                SnackBar(content: Text('Error: $e')),
-                              );
+                              AppNotification.showError(context, AppErrorHandler.parseError(e));
                             }
                           } finally {
                             if (dialogContext.mounted) {

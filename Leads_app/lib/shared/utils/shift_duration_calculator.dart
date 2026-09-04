@@ -124,7 +124,7 @@ class ShiftDurationCalculator {
     }
 
     final netWorkingMins = totalShiftMins - breakDurationMinutes;
-    final workingHours = netWorkingMins / 60.0;
+    final workingHours = totalShiftMins / 60.0;
 
     return ShiftDurationResult(
       totalShiftMinutes: totalShiftMins,
@@ -132,8 +132,8 @@ class ShiftDurationCalculator {
       workingHours: workingHours,
       isValid: true,
       formattedTotalDuration: formatMinutesToHumanReadable(totalShiftMins),
-      formattedWorkingHours: formatMinutesToHumanReadable(netWorkingMins),
-      formattedShort: formatMinutesShort(netWorkingMins),
+      formattedWorkingHours: formatMinutesToHumanReadable(totalShiftMins),
+      formattedShort: formatMinutesShort(totalShiftMins),
     );
   }
 
@@ -167,5 +167,18 @@ class ShiftDurationCalculator {
     } else {
       return '${mins}m';
     }
+  }
+
+  /// Formats double hours into short text (e.g., "8 hrs", "2.5 hrs", "1 hr").
+  static String formatHoursShort(double hours) {
+    if (hours <= 0) return '0 hrs';
+    var formatted = hours.toStringAsFixed(2);
+    if (formatted.endsWith('.00')) {
+      formatted = formatted.substring(0, formatted.length - 3);
+    } else if (formatted.endsWith('0')) {
+      formatted = formatted.substring(0, formatted.length - 1);
+    }
+    if (formatted == '1') return '1 hr';
+    return '$formatted hrs';
   }
 }

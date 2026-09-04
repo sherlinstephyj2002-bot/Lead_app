@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/providers/permissions_provider.dart';
 import '../../../constants/user_roles.dart';
+import '../../../shared/utils/app_notification.dart';
+import '../../../shared/services/app_error_handler.dart';
 
 class QuickActionsSheet extends ConsumerStatefulWidget {
   const QuickActionsSheet({super.key});
@@ -324,13 +326,7 @@ class _QuickActionsSheetState extends ConsumerState<QuickActionsSheet> {
   }
 
   void _showSimpleToast(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    AppNotification.showInfo(context, message);
   }
 
   void _showAddFollowupDialog(BuildContext context) {
@@ -470,17 +466,13 @@ class _QuickActionsSheetState extends ConsumerState<QuickActionsSheet> {
                     Navigator.pop(dialogCtx);
                   }
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Follow-up scheduled successfully.')),
-                    );
+                    AppNotification.showSuccess(context, 'Follow-up scheduled successfully.');
                   }
                 } catch (e, stackTrace) {
                   debugPrint('Follow-up Error: $e');
                   debugPrint(stackTrace.toString());
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(e.toString())),
-                    );
+                    AppNotification.showError(context, AppErrorHandler.parseError(e));
                   }
                 } finally {
                   if (dialogCtx.mounted) {

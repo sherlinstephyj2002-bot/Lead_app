@@ -21,6 +21,7 @@ import '../models/employee_document_model.dart';
 import '../models/salary_component_audit_log_model.dart';
 import '../models/salary_revision_model.dart';
 import '../models/payroll_model.dart';
+import '../models/role_model.dart';
 
 
 import '../../../constants/user_roles.dart';
@@ -146,6 +147,24 @@ class CompanyAdminRepository {
     return false;
   }
 
+  Future<bool> isDepartmentCodeDuplicate(String companyId, String code, {String? excludeId}) async {
+    final query = await _firestore
+        .collection('departments')
+        .where('companyId', isEqualTo: companyId)
+        .get();
+    
+    final normalizedInput = code.trim().toLowerCase();
+    for (final doc in query.docs) {
+      final dept = DepartmentModel.fromMap(doc.data());
+      if (dept.status == 'deleted' || dept.status == 'archived') continue;
+      if (excludeId != null && dept.departmentId == excludeId) continue;
+      if (dept.departmentCode.trim().toLowerCase() == normalizedInput) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // ==========================================
   // MODULE 5 - DESIGNATION MANAGEMENT
   // ==========================================
@@ -193,7 +212,34 @@ class CompanyAdminRepository {
     await _firestore.collection('designations').doc(designationId).delete();
   }
 
-  Future<bool> isDesignationNameDuplicate(String companyId, String name, {String? excludeId}) async {
+  Future<bool> isDesignationDuplicate(String companyId, String name, String? departmentId, {String? excludeId}) async {
+    final query = await _firestore
+        .collection('designations')
+        .where('companyId', isEqualTo: companyId)
+        .get();
+    
+    final normalizedInput = name.trim().toLowerCase();
+    for (final doc in query.docs) {
+      final desig = DesignationModel.fromMap(doc.data());
+      if (desig.status == 'deleted' || desig.status == 'archived') continue;
+      if (excludeId != null && desig.designationId == excludeId) continue;
+      if (desig.designationName.trim().toLowerCase() == normalizedInput) {
+        if (departmentId != null && departmentId.isNotEmpty) {
+          if (desig.departmentId == departmentId || desig.managedDepartmentIds.contains(departmentId)) {
+            return true;
+          }
+        } else {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Future<bool> isDesignationNameDuplicate(String companyId, String name, {String? excludeId, String? departmentId}) async {
+    if (departmentId != null && departmentId.isNotEmpty) {
+      return isDesignationDuplicate(companyId, name, departmentId, excludeId: excludeId);
+    }
     final query = await _firestore
         .collection('designations')
         .where('companyId', isEqualTo: companyId)
@@ -209,6 +255,42 @@ class CompanyAdminRepository {
       }
     }
     return false;
+  }
+
+  // ==========================================
+  // MODULE 5B - ROLE MANAGEMENT
+  // ==========================================
+
+  Future<List<RoleModel>> getRoles(String companyId) async {
+    final query = await _firestore
+        .collection('roles')
+        .where('companyId', isEqualTo: companyId)
+        .get();
+    return query.docs
+        .map((doc) => RoleModel.fromMap(doc.data()))
+        .where((r) => r.status != 'deleted')
+        .toList();
+  }
+
+  Future<void> saveRole(RoleModel role) async {
+    await _firestore
+        .collection('roles')
+        .doc(role.roleId)
+        .set(role.toMap(), SetOptions(merge: true));
+  }
+
+  Future<void> deleteRole(String roleId) async {
+    await _firestore
+        .collection('roles')
+        .doc(roleId)
+        .update({'status': 'archived', 'updatedAt': Timestamp.fromDate(DateTime.now())});
+  }
+
+  Future<void> restoreRole(String roleId) async {
+    await _firestore
+        .collection('roles')
+        .doc(roleId)
+        .update({'status': 'active', 'updatedAt': Timestamp.fromDate(DateTime.now())});
   }
 
   // ==========================================
@@ -692,10 +774,27 @@ class CompanyAdminRepository {
     });
   }
 
-  Future<void> updateAttendanceCorrection(String attendanceId, String status) async {
-    await _firestore.collection('attendance').doc(attendanceId).update({
+  Future<void> updateAttendanceCorrection(String attendanceId, String status, {String? adminUid, String? adminName}) async {
+    final Map<String, dynamic> updates = {
       'status': status,
-    });
+      'isRegularized': status.toLowerCase() == 'present' || status.toLowerCase() == 'approved',
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (adminUid != null) updates['regularizedBy'] = adminUid;
+    if (adminName != null) updates['regularizedByName'] = adminName;
+    updates['regularizedAt'] = FieldValue.serverTimestamp();
+
+    await _firestore.collection('attendance').doc(attendanceId).update(updates);
+
+    // Also update matching request in attendance_corrections collection if applicable
+    final corrSnap = await _firestore.collection('attendance_corrections').where('attendanceId', isEqualTo: attendanceId).get();
+    for (final doc in corrSnap.docs) {
+      await doc.reference.update({
+        'status': status,
+        'approvedBy': adminName ?? adminUid,
+        'approvedAt': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   Future<void> logEmployeeActivity({

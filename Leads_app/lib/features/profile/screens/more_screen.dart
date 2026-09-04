@@ -76,35 +76,43 @@ class MoreScreen extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
 
-            if (user.role != UserRoles.companyAdmin) ...[
-      // Quick Summary metrics section
-      Text(
-        'Quick Summary',
-        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: titleColor),
-      ),
-      const SizedBox(height: 12),
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _buildSummaryMiniCard(context, '$totalEmployees', 'Employees', const Color(0xFF10B981)),
-            if (isLeadEnabled)
-              _buildSummaryMiniCard(context, '$totalLeadsCount', 'Total Leads', const Color(0xFF3B82F6)),
-            if (permissionService.hasPermission('order_view') || permissionService.hasPermission('order.view')) ...[
-              _buildSummaryMiniCard(context, '$totalOrdersCount', 'Orders', const Color(0xFFF59E0B)),
-              _buildSummaryMiniCard(context, formatCurrency.format(thisMonthSales), 'This Month Sales', const Color(0xFF8B5CF6)),
+            if (user.role == UserRoles.employee) ...[
+              _buildSectionHeader(context, 'Employee Self Service'),
+              _buildMenuItem(context, Icons.person_rounded, 'My Profile', 'View and update your personal profile details', () => context.push('/ess/profile')),
+              _buildMenuItem(context, Icons.time_to_leave_rounded, 'Leave Applications', 'Submit and track your leave requests', () => context.push('/ess/leaves')),
+              _buildMenuItem(context, Icons.edit_calendar_rounded, 'Attendance Regularization', 'Submit attendance correction or override request', () => context.push('/ess/attendance')),
+              const SizedBox(height: 16),
+            ] else ...[
+              if (user.role != UserRoles.companyAdmin) ...[
+                // Quick Summary metrics section
+                Text(
+                  'Quick Summary',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: titleColor),
+                ),
+                const SizedBox(height: 12),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildSummaryMiniCard(context, '$totalEmployees', 'Employees', const Color(0xFF10B981)),
+                      if (isLeadEnabled)
+                        _buildSummaryMiniCard(context, '$totalLeadsCount', 'Total Leads', const Color(0xFF3B82F6)),
+                      if (permissionService.hasPermission('order_view') || permissionService.hasPermission('order.view')) ...[
+                        _buildSummaryMiniCard(context, '$totalOrdersCount', 'Orders', const Color(0xFFF59E0B)),
+                        _buildSummaryMiniCard(context, formatCurrency.format(thisMonthSales), 'This Month Sales', const Color(0xFF8B5CF6)),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+              ],
+
+              // Secondary Settings & Utilities Only
+              _buildSectionHeader(context, 'Account & Subscription'),
+              _buildMenuItem(context, Icons.credit_card_rounded, 'Subscription Management', 'Manage your plan, usage limits, and billing details.', () => context.push('/subscription')),
+
+              const SizedBox(height: 16),
             ],
-          ],
-        ),
-      ),
-      const SizedBox(height: 28),
-    ],
-
-            // Secondary Settings & Utilities Only
-            _buildSectionHeader(context, 'Account & Subscription'),
-            _buildMenuItem(context, Icons.credit_card_rounded, 'Subscription Management', 'Manage your plan, usage limits, and billing details.', () => context.push('/subscription')),
-
-            const SizedBox(height: 16),
 
             _buildSectionHeader(context, 'Preferences & Support'),
             _buildMenuItem(context, Icons.settings_rounded, 'App Settings', 'General application settings and preferences', () => context.push('/settings')),

@@ -9,6 +9,7 @@ import '../models/task_model.dart';
 import '../models/lead_model.dart';
 import '../models/attendance_model.dart';
 import '../models/followup_model.dart';
+import '../utils/pdf_font_helper.dart';
 
 class PdfService {
   static final formatCurrency = NumberFormat.simpleCurrency(locale: 'en_IN', decimalDigits: 0);
@@ -20,9 +21,11 @@ class PdfService {
     required List<ExpenseModel> expenses,
     required List<TaskModel> tasks,
   }) async {
+    final theme = await PdfFontHelper.getPdfTheme();
     final pdf = pw.Document(
       title: 'Invoice_${order.orderId}',
       author: 'WorkTrack SaaS',
+      theme: theme,
     );
 
     // Create pages
@@ -258,9 +261,11 @@ class PdfService {
     required List<ExpenseModel> expenses,
     required List<TaskModel> tasks,
   }) async {
+    final theme = await PdfFontHelper.getPdfTheme();
     final pdf = pw.Document(
       title: 'Order_Summary_${order.orderId}',
       author: 'WorkTrack SaaS',
+      theme: theme,
     );
 
     final totalExpenses = expenses.fold(0.0, (prev, e) => prev + e.amount);
@@ -460,9 +465,11 @@ class PdfService {
   }
 
   static Future<Uint8List> generateLeadsReportPdf(List<LeadModel> leads) async {
+    final theme = await PdfFontHelper.getPdfTheme();
     final pdf = pw.Document(
       title: 'Leads_Report_${formatDate.format(DateTime.now())}',
       author: 'WorkTrack SaaS',
+      theme: theme,
     );
 
     final statusCounts = <String, int>{};
@@ -528,9 +535,11 @@ class PdfService {
   }
 
   static Future<Uint8List> generateOrdersReportPdf(List<OrderModel> orders) async {
+    final theme = await PdfFontHelper.getPdfTheme();
     final pdf = pw.Document(
       title: 'Orders_Report_${formatDate.format(DateTime.now())}',
       author: 'WorkTrack SaaS',
+      theme: theme,
     );
 
     final totalRevenue = orders.where((o) => o.status != 'Cancelled').fold(0.0, (prev, o) => prev + o.amount);
@@ -598,9 +607,11 @@ class PdfService {
     String? companyName,
     Map<String, String>? filters,
   }) async {
+    final theme = await PdfFontHelper.getPdfTheme();
     final pdf = pw.Document(
       title: 'Attendance_Report_${formatDate.format(DateTime.now())}',
       author: 'WorkTrack SaaS',
+      theme: theme,
     );
 
     final presentCount = logs.where((l) => l.status == 'Present' || l.status == 'Late').length;

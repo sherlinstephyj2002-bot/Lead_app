@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/utils/app_validators.dart';
+import '../../../shared/utils/app_notification.dart';
 
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -128,9 +129,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             _handleLogin();
           } else {
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('No saved password found for biometrics. Please use manual login.')),
-              );
+              AppNotification.showError(context, 'No saved password found for biometrics. Please use manual login.');
             }
           }
         }

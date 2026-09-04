@@ -1821,6 +1821,31 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<bool> bypassEmailVerificationDevMode() async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final currentUser = state.user;
+      if (currentUser != null) {
+        if (isFirebaseInitialized) {
+          try {
+            await FirebaseFirestore.instance.collection(FirestoreCollections.users).doc(currentUser.uid).update({
+              'isEmailVerified': true,
+            });
+          } catch (_) {}
+        }
+        final verifiedUser = currentUser.copyWith(isEmailVerified: true);
+        state = AuthState(user: verifiedUser, isLoading: false);
+      } else {
+        state = state.copyWith(isLoading: false);
+      }
+      _ref.read(emailOtpVerifiedProvider.notifier).state = true;
+      return true;
+    } catch (e, stack) {
+      state = state.copyWith(isLoading: false, errorMessage: AppErrorHandler.parseError(e, stack));
+      return false;
+    }
+  }
+
   void loginMockUser(String role) {
     state = state.copyWith(isLoading: true);
     

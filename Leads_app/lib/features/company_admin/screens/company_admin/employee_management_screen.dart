@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData, FilteringTextInputFormatter;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:worktrack/constants/user_roles.dart';
 import 'package:worktrack/constants/feature_flags.dart';
-import 'package:worktrack/shared/services/subscription_service.dart';
 import 'package:worktrack/shared/providers/providers.dart';
 import 'package:worktrack/shared/models/user_model.dart';
-import 'package:worktrack/shared/utils/employee_id_generator.dart';
 import 'package:worktrack/shared/utils/app_validators.dart';
 import 'package:worktrack/shared/utils/app_notification.dart';
-import 'package:worktrack/shared/widgets/company_logo_avatar.dart';
 import 'package:worktrack/shared/widgets/app_user_avatar.dart';
 import 'package:worktrack/shared/widgets/subscription_upgrade_dialog.dart';
 import 'package:worktrack/shared/models/department_model.dart';
 import 'package:worktrack/features/company_admin/models/designation_model.dart';
+import 'package:worktrack/features/company_admin/models/role_model.dart';
 import 'package:worktrack/features/company_admin/models/shift_model.dart';
 import 'package:worktrack/features/company_admin/models/branch_model.dart';
 import 'package:worktrack/features/company_admin/models/salary_structure_model.dart';
 import 'package:worktrack/features/company_admin/providers/company_admin_providers.dart';
-import 'package:worktrack/features/company_admin/widgets/company_admin/searchable_paginated_table.dart';
+import 'package:worktrack/shared/widgets/multi_select_department_dropdown.dart';
+import 'package:worktrack/shared/utils/organizational_role_helper.dart';
 import 'employee_profile_screen.dart';
 
 class EmployeeManagementScreen extends ConsumerStatefulWidget {
@@ -797,12 +797,21 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
 
     String? selectedDeptId = existingEmp?.departmentId;
     String? selectedDesigId = existingEmp?.designationId;
+    String selectedDesigName = existingEmp?.designation ?? '';
+    String? selectedRoleId = existingEmp?.roleId;
+    String selectedRoleName = existingEmp?.jobRole ?? '';
     String? selectedManagerId = existingEmp?.managerId;
     String? selectedShiftId = existingEmp?.shiftId;
     String? selectedBranchId = existingEmp?.branchId;
     String? selectedSalaryStructureId = existingEmp?.salaryStructureId;
     String selectedEmpType = existingEmp?.employmentType ?? _HRAdminMapping.employmentTypes.first;
     DateTime selectedJoinDate = existingEmp?.joiningDate ?? DateTime.now();
+
+    final Set<String> selectedManagedDeptIds = Set<String>.from(
+      existingEmp?.managedDepartmentIds.isNotEmpty == true
+          ? existingEmp!.managedDepartmentIds
+          : (existingEmp?.departmentId != null && existingEmp!.departmentId!.isNotEmpty ? [existingEmp.departmentId!] : []),
+    );
 
     String selectedRole = _normalizeRole(existingEmp?.role ?? UserRoles.employee);
     String selectedStatus = (existingEmp?.status ?? 'active').toLowerCase().trim();
@@ -853,9 +862,7 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                 : null;
 
             final activeDesigs = desigs.where((d) {
-              if (d.status.toLowerCase() == 'active') return true;
-              if (existingEmp != null && d.designationId == selectedDesigId) return true;
-              return false;
+              return (d.status.toLowerCase() == 'active') || (existingEmp != null && d.designationId == selectedDesigId);
             }).toList();
             final seenDesigs = <String>{};
             final uniqueDesigs = activeDesigs.where((d) => seenDesigs.add(d.designationId)).toList();
@@ -931,9 +938,23 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                 : 'active';
 
             Future<void> executeCreate() async {
-              final deptName = depts.firstWhere((d) => d.departmentId == validDeptId, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: '')).name;
-              final desigName = desigs.firstWhere((d) => d.designationId == validDesigId, orElse: () => DesignationModel(designationId: '', designationName: '', departmentId: '', designationLevel: 1, companyId: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).designationName;
+              final primaryDeptId = selectedManagedDeptIds.isNotEmpty ? selectedManagedDeptIds.first : null;
+              final deptName = uniqueDepts.firstWhere((d) => d.departmentId == primaryDeptId, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: '')).name;
+              final matchedDesig = uniqueDesigs.firstWhere(
+                (d) => d.designationName.toLowerCase() == selectedDesigName.toLowerCase().trim() || d.designationId == selectedDesigId,
+                orElse: () => DesignationModel(designationId: selectedDesigId ?? '', companyId: '', designationName: selectedDesigName, designationLevel: 1, createdAt: DateTime.now(), updatedAt: DateTime.now()),
+              );
+              final effectiveDesigId = matchedDesig.designationId.isNotEmpty ? matchedDesig.designationId : selectedDesigId;
+              final effectiveDesigName = selectedDesigName.isNotEmpty ? selectedDesigName : matchedDesig.designationName;
               final branchName = branches.firstWhere((b) => b.branchId == validBranchId, orElse: () => BranchModel(branchId: '', companyId: '', branchName: '', branchCode: '', email: '', phone: '', address: '', city: '', state: '', country: '', postalCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).branchName;
+
+              final managedDeptNames = selectedManagedDeptIds.map((id) {
+                final d = uniqueDepts.firstWhere(
+                  (dept) => dept.departmentId == id,
+                  orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: ''),
+                );
+                return d.name;
+              }).where((n) => n.isNotEmpty).toList();
 
               setModalState(() { isSubmitting = true; });
               try {
@@ -942,10 +963,14 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                   employeeId: empIdCtrl.text.trim(),
                   personalEmail: personalEmailCtrl.text.trim(),
                   phoneNumber: phoneCtrl.text.trim(),
-                  departmentId: validDeptId,
+                  departmentId: primaryDeptId,
                   department: deptName.isNotEmpty ? deptName : null,
-                  designationId: validDesigId,
-                  designation: desigName.isNotEmpty ? desigName : null,
+                  designationId: effectiveDesigId,
+                  designation: effectiveDesigName.isNotEmpty ? effectiveDesigName : null,
+                  roleId: selectedRoleId,
+                  jobRole: selectedRoleName.isNotEmpty ? selectedRoleName : null,
+                  managedDepartmentIds: selectedManagedDeptIds.toList(),
+                  managedDepartmentNames: managedDeptNames,
                   managerId: validManagerId,
                   joiningDate: selectedJoinDate,
                   employmentType: validEmpType,
@@ -988,9 +1013,23 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
             }
 
             Future<void> executeEdit() async {
-              final deptName = depts.firstWhere((d) => d.departmentId == validDeptId, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: '')).name;
-              final desigName = desigs.firstWhere((d) => d.designationId == validDesigId, orElse: () => DesignationModel(designationId: '', designationName: '', departmentId: '', designationLevel: 1, companyId: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).designationName;
+              final primaryDeptId = selectedManagedDeptIds.isNotEmpty ? selectedManagedDeptIds.first : null;
+              final deptName = uniqueDepts.firstWhere((d) => d.departmentId == primaryDeptId, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: '')).name;
+              final matchedDesig = uniqueDesigs.firstWhere(
+                (d) => d.designationName.toLowerCase() == selectedDesigName.toLowerCase().trim() || d.designationId == selectedDesigId,
+                orElse: () => DesignationModel(designationId: selectedDesigId ?? '', companyId: '', designationName: selectedDesigName, designationLevel: 1, createdAt: DateTime.now(), updatedAt: DateTime.now()),
+              );
+              final effectiveDesigId = matchedDesig.designationId.isNotEmpty ? matchedDesig.designationId : selectedDesigId;
+              final effectiveDesigName = selectedDesigName.isNotEmpty ? selectedDesigName : matchedDesig.designationName;
               final branchName = branches.firstWhere((b) => b.branchId == validBranchId, orElse: () => BranchModel(branchId: '', companyId: '', branchName: '', branchCode: '', email: '', phone: '', address: '', city: '', state: '', country: '', postalCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now())).branchName;
+
+              final managedDeptNames = selectedManagedDeptIds.map((id) {
+                final d = uniqueDepts.firstWhere(
+                  (dept) => dept.departmentId == id,
+                  orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: ''),
+                );
+                return d.name;
+              }).where((n) => n.isNotEmpty).toList();
 
               setModalState(() { isSubmitting = true; });
               try {
@@ -998,10 +1037,14 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                   name: nameCtrl.text.trim(),
                   phoneNumber: phoneCtrl.text.trim(),
                   employeeEmail: personalEmailCtrl.text.trim(),
-                  departmentId: validDeptId,
+                  departmentId: primaryDeptId,
                   department: deptName.isNotEmpty ? deptName : null,
-                  designationId: validDesigId,
-                  designation: desigName.isNotEmpty ? desigName : null,
+                  designationId: effectiveDesigId,
+                  designation: effectiveDesigName.isNotEmpty ? effectiveDesigName : null,
+                  roleId: selectedRoleId,
+                  jobRole: selectedRoleName.isNotEmpty ? selectedRoleName : null,
+                  managedDepartmentIds: selectedManagedDeptIds.toList(),
+                  managedDepartmentNames: managedDeptNames,
                   managerId: validManagerId,
                   joiningDate: selectedJoinDate,
                   employmentType: validEmpType,
@@ -1241,44 +1284,121 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                       validator: (v) => AppValidators.validateMobileNumber(v, isRequired: false),
                     );
 
-                    final deptDropdown = DropdownButtonFormField<String>(
+                    final rolesAsync = ref.watch(adminRolesProvider);
+                    final allRoles = rolesAsync.value ?? [];
+
+                    final primaryDeptDropdown = DropdownButtonFormField<String>(
                       value: validDeptId,
                       dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                       style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                      decoration: _cleanInputDecoration(Icons.business_rounded, hintText: 'Select Department'),
-                      icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                      items: [
-                        if (validDeptId == null || existingEmp != null)
-                          const DropdownMenuItem<String>(value: null, child: Text('Select Department')),
-                        ...uniqueDepts.map((d) {
-                          return DropdownMenuItem(value: d.departmentId, child: Text(d.name));
-                        }),
-                      ],
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Department selection is required' : null,
+                      decoration: _cleanInputDecoration(Icons.business_center_rounded, hintText: 'Select Department *'),
+                      items: uniqueDepts.map((d) => DropdownMenuItem(value: d.departmentId, child: Text(d.departmentName))).toList(),
+                      validator: (v) => (v == null || v.isEmpty) ? 'Please select a department.' : null,
                       onChanged: (val) {
                         setModalState(() {
                           selectedDeptId = val;
+                          selectedDesigId = null;
+                          selectedDesigName = '';
+                          selectedRoleId = null;
+                          selectedRoleName = '';
+                          selectedManagedDeptIds.clear();
+                          if (val != null) selectedManagedDeptIds.add(val);
                         });
                       },
                     );
+
+                    final availableDesigs = (selectedDeptId == null || selectedDeptId!.isEmpty)
+                        ? <DesignationModel>[]
+                        : uniqueDesigs.where((d) => d.applicableDepartmentIds.contains(selectedDeptId) || d.departmentId == selectedDeptId).toList();
 
                     final desigDropdown = DropdownButtonFormField<String>(
                       value: validDesigId,
                       dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                       style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                      decoration: _cleanInputDecoration(Icons.badge_outlined, hintText: 'Select Designation'),
-                      icon: Icon(Icons.keyboard_arrow_down_rounded, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-                      items: [
-                        if (validDesigId == null || existingEmp != null)
-                          const DropdownMenuItem<String>(value: null, child: Text('Select Designation')),
-                        ...uniqueDesigs.map((d) {
-                          return DropdownMenuItem(value: d.designationId, child: Text(d.designationName));
-                        }),
-                      ],
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Designation selection is required' : null,
+                      decoration: _cleanInputDecoration(
+                        Icons.badge_outlined,
+                        hintText: (selectedDeptId == null || selectedDeptId!.isEmpty)
+                            ? 'Select Department first'
+                            : 'Select Designation *',
+                      ),
+                      items: availableDesigs.map((d) => DropdownMenuItem(value: d.designationId, child: Text(d.designationName))).toList(),
+                      validator: (v) => (v == null || v.isEmpty) ? 'Please select a designation.' : null,
                       onChanged: (val) {
                         setModalState(() {
                           selectedDesigId = val;
+                          selectedRoleId = null;
+                          selectedRoleName = '';
+                          if (val != null) {
+                            final match = uniqueDesigs.firstWhere(
+                              (d) => d.designationId == val,
+                              orElse: () => DesignationModel(designationId: '', companyId: '', designationName: '', designationLevel: 1, createdAt: DateTime.now(), updatedAt: DateTime.now()),
+                            );
+                            selectedDesigName = match.designationName;
+                          }
+                        });
+                      },
+                    );
+
+                    final currentDept = uniqueDepts.where((d) => d.departmentId == selectedDeptId).firstOrNull;
+                    final currentDesig = uniqueDesigs.where((d) => d.designationId == selectedDesigId).firstOrNull;
+
+                    final availableRoles = OrganizationalRoleHelper.getAvailableRoles(
+                      department: currentDept,
+                      designation: currentDesig,
+                      allRoles: allRoles,
+                    );
+
+                    final validRoleId = (selectedRoleId != null && availableRoles.any((r) => r.roleId == selectedRoleId))
+                        ? selectedRoleId
+                        : (availableRoles.isNotEmpty ? availableRoles.first.roleId : null);
+
+                    if (selectedRoleId != validRoleId) {
+                      selectedRoleId = validRoleId;
+                      if (validRoleId != null) {
+                        selectedRoleName = availableRoles.firstWhere((r) => r.roleId == validRoleId).roleName;
+                      }
+                    }
+
+                    final roleDropdown = DropdownButtonFormField<String>(
+                      value: selectedRoleId,
+                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
+                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
+                      decoration: _cleanInputDecoration(
+                        Icons.work_outline_rounded,
+                        hintText: (selectedDesigId == null || selectedDesigId!.isEmpty)
+                            ? 'Select Designation first'
+                            : 'Select Role *',
+                      ),
+                      items: availableRoles.map((r) => DropdownMenuItem(value: r.roleId, child: Text(r.roleName))).toList(),
+                      validator: (v) => (v == null || v.isEmpty) ? 'Please select a role.' : null,
+                      onChanged: (val) {
+                        setModalState(() {
+                          selectedRoleId = val;
+                          if (val != null) {
+                            final match = availableRoles.firstWhere(
+                              (r) => r.roleId == val,
+                              orElse: () => RoleModel(roleId: '', companyId: '', roleName: '', departmentId: '', designationId: '', createdAt: DateTime.now(), updatedAt: DateTime.now()),
+                            );
+                            selectedRoleName = match.roleName;
+                          }
+                        });
+                      },
+                    );
+
+                    final matchedDesig = uniqueDesigs.firstWhere(
+                      (d) => d.designationId == selectedDesigId,
+                      orElse: () => DesignationModel(designationId: '', companyId: '', designationName: '', designationLevel: 1, createdAt: DateTime.now(), updatedAt: DateTime.now()),
+                    );
+
+                    final managedDeptWidget = MultiSelectDepartmentDropdown(
+                      departments: uniqueDepts,
+                      selectedDepartmentIds: selectedManagedDeptIds.toList(),
+                      label: 'Managed Departments',
+                      hint: 'Select managed departments',
+                      onChanged: (ids) {
+                        setModalState(() {
+                          selectedManagedDeptIds.clear();
+                          selectedManagedDeptIds.addAll(ids);
                         });
                       },
                     );
@@ -1484,22 +1604,28 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                                     isDesktop,
                                   ),
 
-                                  // SECTION 2: ORGANIZATIONAL DETAILS
+                                  // SECTION 2: ORGANIZATIONAL INFORMATION
                                   const SizedBox(height: 8),
-                                  _buildSectionHeader('ORGANIZATIONAL DETAILS'),
+                                  _buildSectionHeader('ORGANIZATIONAL INFORMATION'),
                                   _buildRowOrStack(
-                                    _buildFieldWrapper('Department', true, deptDropdown),
+                                    _buildFieldWrapper('Department', true, primaryDeptDropdown),
                                     _buildFieldWrapper('Designation', true, desigDropdown),
                                     isDesktop,
                                   ),
                                   const SizedBox(height: 14),
                                   _buildRowOrStack(
+                                    _buildFieldWrapper('Role', true, roleDropdown),
                                     _buildFieldWrapper('Reporting Manager', false, managerDropdown),
-                                    FeatureFlags.enableBranchManagement
-                                        ? _buildFieldWrapper('Assign Branch', true, branchDropdown)
-                                        : const SizedBox(),
                                     isDesktop,
                                   ),
+                                  if (matchedDesig.isManagerial) ...[
+                                    const SizedBox(height: 14),
+                                    _buildFieldWrapper('Managed Departments (Leadership Assignment)', false, managedDeptWidget),
+                                  ],
+                                  if (FeatureFlags.enableBranchManagement) ...[
+                                    const SizedBox(height: 14),
+                                    _buildFieldWrapper('Assign Branch', true, branchDropdown),
+                                  ],
 
                                   // SECTION 3: EMPLOYMENT DETAILS
                                   const SizedBox(height: 8),
@@ -2102,6 +2228,255 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
           ],
         ),
       ),
+    );
+  }
+}
+
+class MultiSelectDepartmentFormField extends StatefulWidget {
+  final List<DepartmentModel> departments;
+  final Set<String> selectedDeptIds;
+  final ValueChanged<Set<String>> onChanged;
+  final bool isDark;
+  final String? errorText;
+
+  const MultiSelectDepartmentFormField({
+    super.key,
+    required this.departments,
+    required this.selectedDeptIds,
+    required this.onChanged,
+    required this.isDark,
+    this.errorText,
+  });
+
+  @override
+  State<MultiSelectDepartmentFormField> createState() => _MultiSelectDepartmentFormFieldState();
+}
+
+class _MultiSelectDepartmentFormFieldState extends State<MultiSelectDepartmentFormField> {
+  void _openSelectionDialog() {
+    final searchCtrl = TextEditingController();
+    final tempSelected = Set<String>.from(widget.selectedDeptIds);
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final query = searchCtrl.text.trim().toLowerCase();
+            final filtered = widget.departments.where((d) {
+              return query.isEmpty || d.name.toLowerCase().contains(query);
+            }).toList();
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              backgroundColor: widget.isDark ? const Color(0xFF1E293B) : Colors.white,
+              title: Row(
+                children: [
+                  const Icon(Icons.business_rounded, color: Color(0xFF4F46E5), size: 22),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Select Department(s) *',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: widget.isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Text(
+                      '${tempSelected.length} selected',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 400,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: searchCtrl,
+                      style: TextStyle(fontSize: 13, color: widget.isDark ? Colors.white : const Color(0xFF1E293B)),
+                      decoration: InputDecoration(
+                        hintText: 'Search departments...',
+                        hintStyle: TextStyle(fontSize: 13, color: widget.isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                        prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setDialogState(() {
+                              tempSelected.addAll(filtered.map((d) => d.departmentId));
+                            });
+                          },
+                          child: const Text('Select All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setDialogState(() {
+                              tempSelected.clear();
+                            });
+                          },
+                          child: const Text('Clear All', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      decoration: BoxDecoration(
+                        color: widget.isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: widget.isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      ),
+                      child: filtered.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.all(16.0),
+                              child: Text('No departments found.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) => Divider(height: 1, color: widget.isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+                              itemBuilder: (context, index) {
+                                final d = filtered[index];
+                                final isChecked = tempSelected.contains(d.departmentId);
+                                return CheckboxListTile(
+                                  value: isChecked,
+                                  dense: true,
+                                  title: Text(
+                                    d.name,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: widget.isDark ? Colors.white : const Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                  activeColor: const Color(0xFF4F46E5),
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                  onChanged: (val) {
+                                    setDialogState(() {
+                                      if (val == true) {
+                                        tempSelected.add(d.departmentId);
+                                      } else {
+                                        tempSelected.remove(d.departmentId);
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  onPressed: () {
+                    widget.onChanged(tempSelected);
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Done', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedNames = widget.departments
+        .where((d) => widget.selectedDeptIds.contains(d.departmentId))
+        .map((d) => d.name)
+        .toList();
+
+    String displayText;
+    if (selectedNames.isEmpty) {
+      displayText = 'Select Department(s) *';
+    } else if (selectedNames.length <= 2) {
+      displayText = selectedNames.join(', ');
+    } else {
+      displayText = '${selectedNames.length} departments selected';
+    }
+
+    final hasError = widget.errorText != null && widget.errorText!.isNotEmpty;
+    final borderColor = hasError
+        ? Colors.red
+        : (widget.isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: _openSelectionDialog,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: widget.isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.business_rounded, size: 18, color: Color(0xFF4F46E5)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    displayText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Inter',
+                      fontSize: 14,
+                      fontWeight: selectedNames.isNotEmpty ? FontWeight.w500 : FontWeight.normal,
+                      color: widget.isDark
+                          ? (selectedNames.isNotEmpty ? Colors.white : const Color(0xFF94A3B8))
+                          : (selectedNames.isNotEmpty ? const Color(0xFF1B1B24) : const Color(0xFF64748B)),
+                    ),
+                  ),
+                ),
+                const Icon(Icons.arrow_drop_down_rounded, color: Color(0xFF64748B)),
+              ],
+            ),
+          ),
+        ),
+        if (hasError)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 4),
+            child: Text(
+              widget.errorText!,
+              style: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
+          ),
+      ],
     );
   }
 }
