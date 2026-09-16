@@ -1,16 +1,12 @@
-import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import '../models/user_model.dart';
 import '../models/employee_request_model.dart';
 import '../models/app_notification_model.dart';
 import '../../constants/firestore_collections.dart';
 import '../../constants/user_roles.dart';
-import '../../constants/feature_flags.dart';
 
 class UserRepository {
   final FirebaseFirestore _firestore;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   UserRepository({FirebaseFirestore? firestore})
       : _firestore = firestore ?? FirebaseFirestore.instance;
@@ -62,21 +58,6 @@ class UserRepository {
         .get();
     final allUsers = query.docs.map((doc) => UserModel.fromMap(doc.data())).toList();
     return allUsers.where((u) => u.role != UserRoles.companyAdmin).toList();
-  }
-
-  Future<String> uploadProfileImage(
-    String uid,
-    String fileName,
-    Uint8List fileBytes,
-  ) async {
-    if (!FeatureFlags.enableImageUpload) {
-      throw Exception('File upload is currently disabled.');
-    }
-    final safeFileName = fileName.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
-    final storagePath = 'profiles/$uid/${DateTime.now().millisecondsSinceEpoch}_$safeFileName';
-    final ref = _storage.ref(storagePath);
-    final uploadTask = await ref.putData(fileBytes);
-    return await uploadTask.ref.getDownloadURL();
   }
 
   Future<void> updateUserProfile(

@@ -17,6 +17,7 @@ import '../../company_admin/models/role_model.dart';
 import '../../company_admin/models/designation_model.dart';
 import '../../../shared/models/department_model.dart';
 import '../../../shared/utils/organizational_role_helper.dart';
+import '../../../shared/utils/company_config_importer.dart';
 
 class EmployeesScreen extends ConsumerStatefulWidget {
   const EmployeesScreen({super.key});
@@ -817,6 +818,7 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
   DepartmentModel? _selectedDepartment;
   DesignationModel? _selectedDesignation;
   RoleModel? _selectedRoleModel;
+  final Set<String> _selectedManagedDeptIds = {};
 
   String? _selectedBranchId;
   String _selectedRole = UserRoles.employee;
@@ -825,6 +827,7 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
   // Attendance Automation Settings
   late String _employeeWorkType;
   late List<String> _notificationRecipients;
+  late List<String> _passwordResetApprovers;
   late bool _enableCheckInReminder;
   late TextEditingController _checkInGraceCtrl;
   late bool _enableAutoAbsent;
@@ -844,8 +847,15 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
     _selectedRole = UserModel.normalizeRole(widget.existing?.role ?? UserRoles.employee);
     _selectedBranchId = widget.existing?.branchId;
 
+    if (widget.existing?.managedDepartmentIds.isNotEmpty == true) {
+      _selectedManagedDeptIds.addAll(widget.existing!.managedDepartmentIds);
+    } else if (widget.existing?.departmentId != null) {
+      _selectedManagedDeptIds.add(widget.existing!.departmentId!);
+    }
+
     _employeeWorkType = widget.existing?.employeeWorkType ?? 'office';
     _notificationRecipients = List<String>.from(widget.existing?.attendanceNotificationRecipients ?? ['hr', 'reporting_manager']);
+    _passwordResetApprovers = List<String>.from(widget.existing?.passwordResetApprovers ?? ['hr', 'reporting_manager', 'company_admin']);
     _enableCheckInReminder = widget.existing?.enableCheckInReminder ?? true;
     _checkInGraceCtrl = TextEditingController(text: (widget.existing?.checkInGraceMinutes ?? 30).toString());
     _enableAutoAbsent = widget.existing?.enableAutoAbsent ?? true;
@@ -1061,11 +1071,12 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
             }
 
             final availableDesigs = _selectedDepartment == null
-                ? <DesignationModel>[]
+                ? allDesigs
                 : allDesigs.where((d) {
-                    return d.applicableDepartmentIds.contains(_selectedDepartment!.departmentId) ||
-                        d.departmentId == _selectedDepartment!.departmentId ||
-                        d.applicableDepartmentIds.isEmpty;
+                    if (d.applicableDepartmentIds.isNotEmpty) {
+                      return d.applicableDepartmentIds.contains(_selectedDepartment!.departmentId);
+                    }
+                    return d.departmentId == _selectedDepartment!.departmentId || d.departmentId.isEmpty;
                   }).toList();
 
             if (_selectedDesignation == null && widget.existing != null && availableDesigs.isNotEmpty) {
@@ -1076,6 +1087,9 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                 orElse: () => availableDesigs.first,
               );
               _selectedDesignation = match;
+              if (match.applicableDepartmentIds.isNotEmpty) {
+                _selectedManagedDeptIds.addAll(match.applicableDepartmentIds);
+              }
             }
 
             final availableRoles = OrganizationalRoleHelper.getAvailableRoles(
@@ -1092,11 +1106,14 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                 orElse: () => availableRoles.first,
               );
               _selectedRoleModel = match;
+            } else if (_selectedRoleModel == null && _selectedDesignation != null && availableRoles.isNotEmpty) {
+              _selectedRoleModel = availableRoles.first;
+              _selectedRole = UserModel.normalizeRole(_selectedRoleModel!.roleName);
             }
 
             final deptDropdown = SearchableSingleSelectDropdown<DepartmentModel>(
-              label: 'Department *',
-              hint: 'Select Department',
+              label: 'Primary Department *',
+              hint: 'Select Primary Department',
               icon: Icons.business_center_rounded,
               items: activeDepts,
               selectedItem: _selectedDepartment,
@@ -1106,8 +1123,24 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
               onChanged: (val) {
                 setState(() {
                   _selectedDepartment = val;
-                  _selectedDesignation = null;
-                  _selectedRoleModel = null;
+                  if (_selectedDesignation != null) {
+                    final isStillApplicable = val != null && (
+                      _selectedDesignation!.applicableDepartmentIds.isEmpty ||
+                      _selectedDesignation!.applicableDepartmentIds.contains(val.departmentId) ||
+                      _selectedDesignation!.departmentId == val.departmentId
+                    );
+                    if (!isStillApplicable) {
+                      _selectedDesignation = null;
+                      _selectedRoleModel = null;
+                      _selectedManagedDeptIds.clear();
+                      if (val != null) _selectedManagedDeptIds.add(val.departmentId);
+                    } else if (val != null && !_selectedManagedDeptIds.contains(val.departmentId)) {
+                      _selectedManagedDeptIds.add(val.departmentId);
+                    }
+                  } else {
+                    _selectedManagedDeptIds.clear();
+                    if (val != null) _selectedManagedDeptIds.add(val.departmentId);
+                  }
                 });
               },
             );
@@ -1119,12 +1152,59 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
               enabled: _selectedDepartment != null,
               items: availableDesigs,
               selectedItem: _selectedDesignation,
-              itemAsString: (d) => d.designationName,
+              customActionLabel: '+ Add Custom Designation',
+              onCustomActionTap: () => CompanyConfigImporter.showCustomDesignationDialog(
+                context,
+                widget.ref,
+                activeDepts,
+                onCreated: (newDesig) {
+                  setState(() {
+                    _selectedDesignation = newDesig;
+                    _selectedManagedDeptIds.clear();
+                    _selectedManagedDeptIds.addAll(newDesig.applicableDepartmentIds);
+                    if (_selectedDepartment != null) {
+                      _selectedManagedDeptIds.add(_selectedDepartment!.departmentId);
+                    }
+                  });
+                },
+              ),
+              itemAsString: (d) {
+                final mappedDepts = d.applicableDepartmentIds;
+                final mappedNames = mappedDepts.map((id) {
+                  final dept = activeDepts.firstWhere((dept) => dept.departmentId == id, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: ''));
+                  return dept.departmentName;
+                }).where((n) => n.isNotEmpty).toList();
+
+                return d.designationName + (mappedNames.isNotEmpty ? ' — ${mappedNames.join(' / ')}' : '');
+              },
               validatorError: 'Designation selection is required',
               onChanged: (val) {
                 setState(() {
                   _selectedDesignation = val;
                   _selectedRoleModel = null;
+                  _selectedManagedDeptIds.clear();
+
+                  if (val != null) {
+                    final mapped = val.applicableDepartmentIds;
+                    if (mapped.isNotEmpty) {
+                      _selectedManagedDeptIds.addAll(mapped);
+                    }
+                    if (_selectedDepartment != null && !_selectedManagedDeptIds.contains(_selectedDepartment!.departmentId)) {
+                      _selectedManagedDeptIds.add(_selectedDepartment!.departmentId);
+                    }
+
+                    final autoRoles = OrganizationalRoleHelper.getAvailableRoles(
+                      department: _selectedDepartment,
+                      designation: val,
+                      allRoles: allRoles,
+                    );
+                    if (autoRoles.isNotEmpty) {
+                      _selectedRoleModel = autoRoles.first;
+                      _selectedRole = UserModel.normalizeRole(autoRoles.first.roleName);
+                    }
+                  } else if (_selectedDepartment != null) {
+                    _selectedManagedDeptIds.add(_selectedDepartment!.departmentId);
+                  }
                 });
               },
             );
@@ -1136,6 +1216,18 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
               enabled: _selectedDesignation != null,
               items: availableRoles,
               selectedItem: _selectedRoleModel,
+              customActionLabel: '+ Add Custom Role',
+              onCustomActionTap: () => CompanyConfigImporter.showCustomRoleDialog(
+                context,
+                widget.ref,
+                activeDepts,
+                onCreated: (newRole) {
+                  setState(() {
+                    _selectedRoleModel = newRole;
+                    _selectedRole = UserModel.normalizeRole(newRole.roleName);
+                  });
+                },
+              ),
               itemAsString: (r) => r.roleName,
               validatorError: 'Role selection is required',
               onChanged: (val) {
@@ -1147,6 +1239,152 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                 });
               },
             );
+
+            final mappedDeptIds = _selectedDesignation?.applicableDepartmentIds ?? [];
+
+            final managedDeptWidget = Material(
+              color: const Color(0xFFF8FAFC),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Color(0xFFE2E8F0)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.hub_outlined, size: 16, color: Color(0xFF4F46E5)),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Department Responsibilities',
+                          style: TextStyle(
+                            fontFamily: 'Inter',
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            _selectedDesignation != null ? '${_selectedDesignation!.designationName} Config' : 'Company Wizard Config',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: const TextStyle(
+                              fontFamily: 'Inter',
+                              fontSize: 10,
+                              fontStyle: FontStyle.italic,
+                              color: Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Departments assigned to this designation in Company Wizard:',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 8),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 6),
+                  if (activeDepts.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      child: Text(
+                        'No departments configured for this company. Please complete Company Setup Wizard.',
+                        style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.orange.shade700),
+                      ),
+                    )
+                  else
+                    Column(
+                      children: activeDepts.map((dept) {
+                        final isPrimary = dept.departmentId == _selectedDepartment?.departmentId;
+                        final isChecked = _selectedManagedDeptIds.contains(dept.departmentId) || isPrimary;
+                        final isWizardMapped = mappedDeptIds.contains(dept.departmentId);
+
+                        return CheckboxListTile(
+                          value: isChecked,
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          activeColor: const Color(0xFF5B4CF0),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  dept.departmentName,
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 13,
+                                    fontWeight: isPrimary ? FontWeight.bold : FontWeight.w500,
+                                    color: const Color(0xFF1E293B),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (isPrimary)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: const Color(0xFF6366F1), width: 0.8),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.star_rounded, size: 10, color: Color(0xFF6366F1)),
+                                      SizedBox(width: 2),
+                                      Text(
+                                        'Primary',
+                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else if (isWizardMapped)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: const Color(0xFFCBD5E1), width: 0.8),
+                                  ),
+                                  child: const Text(
+                                    'Wizard Mapped',
+                                    style: TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          onChanged: isPrimary
+                              ? null
+                              : (val) {
+                                  setState(() {
+                                    if (val == true) {
+                                      _selectedManagedDeptIds.add(dept.departmentId);
+                                    } else {
+                                      _selectedManagedDeptIds.remove(dept.departmentId);
+                                    }
+                                    if (_selectedDepartment != null) {
+                                      _selectedManagedDeptIds.add(_selectedDepartment!.departmentId);
+                                    }
+                                  });
+                                },
+                        );
+                      }).toList(),
+                    ),
+                ],
+              ),
+            ),
+          );
 
             final branchDropdown = (!isEdit && FeatureFlags.enableBranchManagement)
                 ? Consumer(
@@ -1237,6 +1475,8 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                     ),
                     const SizedBox(height: 12),
                     _buildFieldWrapper('Role', true, roleDropdown),
+                    const SizedBox(height: 12),
+                    _buildFieldWrapper('Department Responsibilities', false, managedDeptWidget),
                     if (!isEdit && FeatureFlags.enableBranchManagement) ...[
                       const SizedBox(height: 14),
                       _buildFieldWrapper('Assign Branch', true, branchDropdown),
@@ -1372,6 +1612,69 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                                               _notificationRecipients.add('company_admin');
                                             } else {
                                               _notificationRecipients.remove('company_admin');
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+
+                                  // 2b. Password Reset Request Approvers
+                                  const Text('Password Reset Request Approvers', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Inter', color: Color(0xFF334155))),
+                                  const Text('Select authorized roles who can review & approve password resets for this employee:', style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontFamily: 'Inter')),
+                                  const SizedBox(height: 6),
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      FilterChip(
+                                        label: const Text('HR'),
+                                        selected: _passwordResetApprovers.contains('hr'),
+                                        onSelected: (sel) {
+                                          setState(() {
+                                            if (sel) {
+                                              _passwordResetApprovers.add('hr');
+                                            } else {
+                                              _passwordResetApprovers.remove('hr');
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      FilterChip(
+                                        label: const Text('Reporting Manager'),
+                                        selected: _passwordResetApprovers.contains('reporting_manager'),
+                                        onSelected: (sel) {
+                                          setState(() {
+                                            if (sel) {
+                                              _passwordResetApprovers.add('reporting_manager');
+                                            } else {
+                                              _passwordResetApprovers.remove('reporting_manager');
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      FilterChip(
+                                        label: const Text('Team Leader'),
+                                        selected: _passwordResetApprovers.contains('team_leader'),
+                                        onSelected: (sel) {
+                                          setState(() {
+                                            if (sel) {
+                                              _passwordResetApprovers.add('team_leader');
+                                            } else {
+                                              _passwordResetApprovers.remove('team_leader');
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      FilterChip(
+                                        label: const Text('Company Admin'),
+                                        selected: _passwordResetApprovers.contains('company_admin'),
+                                        onSelected: (sel) {
+                                          setState(() {
+                                            if (sel) {
+                                              _passwordResetApprovers.add('company_admin');
+                                            } else {
+                                              _passwordResetApprovers.remove('company_admin');
                                             }
                                           });
                                         },
@@ -1547,7 +1850,10 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
               'designation': _selectedDesignation?.designationName,
               'roleId': _selectedRoleModel?.roleId,
               'role': _selectedRoleModel?.roleName ?? _selectedRole,
+              'managedDepartmentIds': _selectedManagedDeptIds.toList(),
+              'managedDepartmentNames': widget.ref.read(adminDepartmentsProvider).value?.where((d) => _selectedManagedDeptIds.contains(d.departmentId)).map((d) => d.departmentName).toList() ?? [],
               'branchId': _selectedBranchId,
+              'passwordResetApprovers': _passwordResetApprovers,
             },
           );
 
@@ -1612,6 +1918,8 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                 designation: _selectedDesignation?.designationName,
                 roleId: _selectedRoleModel?.roleId,
                 jobRole: _selectedRoleModel?.roleName ?? _selectedRole,
+                managedDepartmentIds: _selectedManagedDeptIds.toList(),
+                managedDepartmentNames: widget.ref.read(adminDepartmentsProvider).value?.where((d) => _selectedManagedDeptIds.contains(d.departmentId)).map((d) => d.departmentName).toList() ?? [],
                 managerId: null,
                 joiningDate: DateTime.now(),
                 employmentType: 'Full-Time',
@@ -1619,6 +1927,7 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                 branchName: branchName,
                 employeeWorkType: _employeeWorkType,
                 attendanceNotificationRecipients: _notificationRecipients,
+                passwordResetApprovers: _passwordResetApprovers,
                 enableCheckInReminder: _enableCheckInReminder,
                 checkInGraceMinutes: int.tryParse(_checkInGraceCtrl.text) ?? 30,
                 enableAutoAbsent: _enableAutoAbsent,
@@ -1727,6 +2036,7 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
           designation: _selectedDesignation?.designationName,
           employeeWorkType: _employeeWorkType,
           attendanceNotificationRecipients: _notificationRecipients,
+          passwordResetApprovers: _passwordResetApprovers,
           enableCheckInReminder: _enableCheckInReminder,
           checkInGraceMinutes: int.tryParse(_checkInGraceCtrl.text) ?? 30,
           enableAutoAbsent: _enableAutoAbsent,

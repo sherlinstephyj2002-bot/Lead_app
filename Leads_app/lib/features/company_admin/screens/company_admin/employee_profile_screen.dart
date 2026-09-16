@@ -1,14 +1,10 @@
-import 'dart:io' as io;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:worktrack/constants/user_roles.dart';
-import 'package:worktrack/constants/feature_flags.dart';
 import 'package:worktrack/shared/providers/providers.dart';
 import 'package:worktrack/shared/models/user_model.dart';
 import 'package:worktrack/shared/models/department_model.dart';
@@ -195,94 +191,7 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
     }
   }
 
-  Future<void> _pickAndUploadPhoto() async {
-    if (!FeatureFlags.enableImageUpload) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File upload is currently disabled.')),
-        );
-      }
-      return;
-    }
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: true,
-      );
 
-      if (result == null || result.files.isEmpty) return;
-
-      final file = result.files.single;
-      final fileName = file.name;
-      var fileBytes = file.bytes;
-
-      if (fileBytes == null && file.path != null && !kIsWeb) {
-        fileBytes = await io.File(file.path!).readAsBytes();
-      }
-
-      if (fileBytes == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not read file data. Please try again.')),
-          );
-        }
-        return;
-      }
-
-      if (fileBytes.lengthInBytes > 3 * 1024 * 1024) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Image size exceeds 3MB limit.')),
-          );
-        }
-        return;
-      }
-
-      setState(() => isSavingProfile = true);
-      final currentUser = ref.read(authProvider).user;
-      final isSelf = currentUser != null && (currentUser.uid == _employeeState.uid || (currentUser.employeeId != null && currentUser.employeeId == _employeeState.employeeId));
-
-      String? downloadUrl;
-      if (isSelf) {
-        downloadUrl = await ref.read(authProvider.notifier).uploadAvatar(fileName, fileBytes);
-      } else {
-        downloadUrl = await ref.read(userRepositoryProvider).uploadProfileImage(_employeeState.uid, fileName, fileBytes);
-        final updatedEmp = _employeeState.copyWith(profileImageUrl: downloadUrl);
-        await ref.read(adminEmployeesProvider.notifier).editEmployee(updatedEmp);
-      }
-      
-      if (!mounted) return;
-      if (downloadUrl != null && downloadUrl.isNotEmpty) {
-        setState(() {
-          _employeeState = _employeeState.copyWith(profileImageUrl: downloadUrl);
-          isSavingProfile = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile picture updated successfully.'),
-            backgroundColor: Color(0xFF22C55E),
-          ),
-        );
-        _loadRelatedData();
-      } else {
-        setState(() => isSavingProfile = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to upload image.'),
-            backgroundColor: Color(0xFFEF4444),
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() => isSavingProfile = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e'), backgroundColor: const Color(0xFFEF4444)),
-        );
-      }
-    }
-  }
 
   Future<void> _saveCompanyAdminProfileChanges() async {
     setState(() => isSavingProfile = true);
@@ -588,24 +497,6 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
                         ),
                       ),
                     ),
-                    if (FeatureFlags.enableImageUpload)
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Material(
-                          color: const Color(0xFF5B4CF0),
-                          elevation: 3,
-                          shape: const CircleBorder(),
-                          child: InkWell(
-                            onTap: _pickAndUploadPhoto,
-                            customBorder: const CircleBorder(),
-                            child: const Padding(
-                              padding: EdgeInsets.all(6.0),
-                              child: Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -968,45 +859,23 @@ class _EmployeeProfileScreenState extends ConsumerState<EmployeeProfileScreen> {
                                 ),
                               ),
                             ),
-                            Stack(
-                              children: [
-                                Container(
-                                  width: 90,
-                                  height: 90,
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: const Color(0xFF5B4CF0).withOpacity(0.2), width: 3),
-                                  ),
-                                  child: ClipOval(
-                                    child: AppUserAvatar(
-                                      user: targetEmployee,
-                                      companyId: targetEmployee.companyId,
-                                      radius: 40,
-                                      backgroundColor: Colors.transparent,
-                                      iconColor: const Color(0xFF5B4CF0),
-                                    ),
-                                  ),
+                            Container(
+                              width: 90,
+                              height: 90,
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(color: const Color(0xFF5B4CF0).withOpacity(0.2), width: 3),
+                              ),
+                              child: ClipOval(
+                                child: AppUserAvatar(
+                                  user: targetEmployee,
+                                  companyId: targetEmployee.companyId,
+                                  radius: 40,
+                                  backgroundColor: Colors.transparent,
+                                  iconColor: const Color(0xFF5B4CF0),
                                 ),
-                                if (FeatureFlags.enableImageUpload)
-                                  Positioned(
-                                    bottom: 0,
-                                    right: 0,
-                                    child: Material(
-                                      color: const Color(0xFF5B4CF0),
-                                      elevation: 3,
-                                      shape: const CircleBorder(),
-                                      child: InkWell(
-                                        onTap: _pickAndUploadPhoto,
-                                        customBorder: const CircleBorder(),
-                                        child: const Padding(
-                                          padding: EdgeInsets.all(6.0),
-                                          child: Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
+                              ),
                             ),
                             const SizedBox(height: 14),
                             SelectableText(

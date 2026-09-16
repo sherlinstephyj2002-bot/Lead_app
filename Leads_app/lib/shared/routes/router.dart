@@ -83,6 +83,7 @@ import '../../features/company_admin/screens/company_admin/role_permissions_scre
 import '../../features/company_admin/screens/company_admin/company_configuration_screen.dart';
 import '../../features/company_admin/screens/company_admin/audit_logs_screen.dart';
 import '../../features/company_admin/screens/company_admin/company_announcements_screen.dart';
+import '../../features/company_admin/screens/company_admin/password_reset_requests_screen.dart';
 
 class RouterListenable extends ChangeNotifier {
   final Ref _ref;
@@ -167,7 +168,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             state.matchedLocation == '/forgot-password';
 
         if (loggedIn) {
-          final mustChangePass = (authState.user!.mustChangePassword || authState.user!.firstLogin || authState.user!.temporaryPasswordRequired == true) && !authState.user!.passwordChanged;
+          final isEmp = authState.user!.role != UserRoles.companyAdmin;
+          final mustChangePass = isEmp &&
+              (authState.user!.mustChangePassword ||
+                  authState.user!.firstLogin ||
+                  authState.user!.temporaryPasswordRequired == true ||
+                  !authState.user!.securityPinConfigured) &&
+              !authState.user!.passwordChanged;
           if (mustChangePass) {
             if (state.matchedLocation != '/change-password') {
               return '/change-password';
@@ -704,6 +711,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           permission: 'settings.manage',
           child: CompanyAnnouncementsScreen(),
         ),
+      ),
+      GoRoute(
+        path: '/company-admin/password-reset-requests',
+        builder: (context, state) {
+          final reqId = state.uri.queryParameters['requestId'];
+          return PasswordResetRequestsScreen(initialRequestId: reqId);
+        },
       ),
     ],
   );

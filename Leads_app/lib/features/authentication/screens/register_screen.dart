@@ -1,18 +1,10 @@
-import 'dart:convert';
-import 'dart:io' as io;
-import 'dart:typed_data';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../constants/user_roles.dart';
-import '../../../constants/feature_flags.dart';
 import '../../../shared/services/password_validator.dart';
 import '../../../shared/utils/app_validators.dart';
-import '../../../shared/utils/app_notification.dart';
-import '../../../shared/services/app_error_handler.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -46,10 +38,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   String _companyType = 'Field Service';
   String _timeZone = 'UTC+05:30 — India Standard Time';
-
-  // Optional Logo upload variables
-  Uint8List? _logoBytes;
-  String? _logoUrl;
 
   final List<String> _companyTypes = [
     'Field Service',
@@ -91,60 +79,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     super.dispose();
   }
 
-  Future<void> _pickLogo() async {
-    if (!FeatureFlags.enableImageUpload) {
-      if (mounted) {
-        AppNotification.showError(context, 'File upload is currently disabled.');
-      }
-      return;
-    }
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: true,
-      );
-
-      if (result == null || result.files.isEmpty) return;
-
-      final file = result.files.single;
-      var bytes = file.bytes;
-
-      if (bytes == null && file.path != null && !kIsWeb) {
-        bytes = await io.File(file.path!).readAsBytes();
-      }
-
-      if (bytes == null) return;
-
-      if (bytes.lengthInBytes > 2 * 1024 * 1024) {
-        if (mounted) {
-          AppNotification.showError(context, 'Logo size exceeds 2MB limit.');
-        }
-        return;
-      }
-
-      final base64Str = base64Encode(bytes);
-      final ext = file.name.contains('.') ? file.name.split('.').last.toLowerCase() : 'png';
-      final mime = (ext == 'png') ? 'image/png' : 'image/jpeg';
-
-      setState(() {
-        _logoBytes = bytes;
-        _logoUrl = 'data:$mime;base64,$base64Str';
-      });
-    } catch (e) {
-      if (mounted) {
-        AppNotification.showError(context, AppErrorHandler.parseError(e));
-      }
-    }
-  }
-
-  void _removeLogo() {
-    setState(() {
-      _logoBytes = null;
-      _logoUrl = null;
-    });
-  }
-
   void _handleRegister() async {
     if (_formKey.currentState!.validate()) {
       final success = await ref.read(authProvider.notifier).register(
@@ -165,7 +99,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         website: _websiteController.text.trim(),
         role: UserRoles.companyAdmin,
         phoneNumber: _companyMobileController.text.trim(),
-        logoUrl: _logoUrl,
       );
 
       if (success && mounted) {
@@ -414,59 +347,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
                     // SECTION C: Company Branding
                     _buildSectionCard(
-                      title: 'Company Branding',
-                      subtitle: 'Company logo and web address (Optional)',
+                      title: 'Company Web & Tax Info',
+                      subtitle: 'Company web address and tax registration (Optional)',
                       icon: Icons.palette_outlined,
                       children: [
-                        const Text('Company Logo (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Container(
-                              width: 64,
-                              height: 64,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFCBD5E1)),
-                              ),
-                              child: _logoBytes != null
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(10),
-                                      child: Image.memory(_logoBytes!, fit: BoxFit.cover),
-                                    )
-                                  : const Icon(Icons.business_rounded, color: Color(0xFF94A3B8), size: 32),
-                            ),
-                            const SizedBox(width: 16),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                OutlinedButton.icon(
-                                  onPressed: _pickLogo,
-                                  icon: const Icon(Icons.upload_rounded, size: 18),
-                                  label: Text(_logoBytes == null ? 'Upload Logo' : 'Replace Logo'),
-                                  style: OutlinedButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  ),
-                                ),
-                                if (_logoBytes != null) ...[
-                                  const SizedBox(height: 4),
-                                  TextButton(
-                                    onPressed: _removeLogo,
-                                    style: TextButton.styleFrom(
-                                      padding: EdgeInsets.zero,
-                                      minimumSize: Size.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    child: const Text('Remove Logo', style: TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
 
                         const Text('Website (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
                         const SizedBox(height: 6),

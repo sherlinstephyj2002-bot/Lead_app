@@ -1,7 +1,8 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 /// Clean, professional single-select dropdown supporting typing/searching, scrolling,
-/// and proper disabled/required states.
+/// custom item addition, text file import, and proper disabled/required states.
 class SearchableSingleSelectDropdown<T> extends StatelessWidget {
   final String label;
   final String hint;
@@ -14,6 +15,10 @@ class SearchableSingleSelectDropdown<T> extends StatelessWidget {
   final bool isRequired;
   final IconData icon;
   final String? validatorError;
+  final String? customActionLabel;
+  final VoidCallback? onCustomActionTap;
+  final String? importActionLabel;
+  final VoidCallback? onImportActionTap;
 
   const SearchableSingleSelectDropdown({
     super.key,
@@ -28,6 +33,10 @@ class SearchableSingleSelectDropdown<T> extends StatelessWidget {
     this.isRequired = true,
     this.icon = Icons.arrow_drop_down_circle_outlined,
     this.validatorError,
+    this.customActionLabel,
+    this.onCustomActionTap,
+    this.importActionLabel,
+    this.onImportActionTap,
   });
 
   void _openSelectionModal(BuildContext context) {
@@ -47,23 +56,85 @@ class SearchableSingleSelectDropdown<T> extends StatelessWidget {
               return name.contains(query) || sub.contains(query);
             }).toList();
 
+            final screenWidth = MediaQuery.of(context).size.width;
+            final dialogWidth = math.min(480.0, screenWidth * 0.9);
+
             return AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+              contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
               title: Row(
                 children: [
                   Icon(icon, color: const Color(0xFF5B4CF0), size: 20),
                   const SizedBox(width: 8),
-                  Text(
-                    label.replaceAll('*', '').trim(),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  Expanded(
+                    child: Text(
+                      label.replaceAll('*', '').trim(),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),
               content: SizedBox(
-                width: 400,
+                width: dialogWidth,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (customActionLabel != null || importActionLabel != null) ...[
+                      Row(
+                        children: [
+                          if (customActionLabel != null)
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF5B4CF0)),
+                                label: Text(
+                                  customActionLabel!,
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF5B4CF0)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                  side: const BorderSide(color: Color(0xFF5B4CF0)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  if (onCustomActionTap != null) onCustomActionTap!();
+                                },
+                              ),
+                            ),
+                          if (customActionLabel != null && importActionLabel != null)
+                            const SizedBox(width: 8),
+                          if (importActionLabel != null)
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.upload_file_rounded, size: 16, color: Color(0xFF059669)),
+                                label: Text(
+                                  importActionLabel!,
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF059669)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                  side: const BorderSide(color: Color(0xFF059669)),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  if (onImportActionTap != null) onImportActionTap!();
+                                },
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const Divider(height: 1),
+                      const SizedBox(height: 10),
+                    ],
                     TextField(
                       autofocus: true,
                       decoration: InputDecoration(
@@ -103,9 +174,14 @@ class SearchableSingleSelectDropdown<T> extends StatelessWidget {
                                     selected: isSelected,
                                     selectedTileColor: const Color(0xFF5B4CF0).withValues(alpha: 0.08),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    title: Text(title, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w500, fontSize: 13)),
+                                    title: Text(
+                                      title,
+                                      style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w500, fontSize: 13),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                     subtitle: subtitle != null && subtitle.isNotEmpty
-                                        ? Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey))
+                                        ? Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey), maxLines: 2, overflow: TextOverflow.ellipsis)
                                         : null,
                                     trailing: isSelected ? const Icon(Icons.check_circle_rounded, color: Color(0xFF5B4CF0), size: 18) : null,
                                     onTap: () {

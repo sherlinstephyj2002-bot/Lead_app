@@ -25,8 +25,7 @@ service cloud.firestore {
 
     // ─── Users ────────────────────────────────────────────────────
     match /users/{uid} {
-      allow read: if isSignedIn() &&
-        (request.auth.uid == uid || isSameCompany(resource.data.companyId));
+      allow read: if true;
       allow create: if isSignedIn() && request.auth.uid == uid;
       allow update: if isSignedIn() &&
         (request.auth.uid == uid || isAdminForCompany(resource.data.companyId));
@@ -120,6 +119,26 @@ service cloud.firestore {
       allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
       allow create: if isSignedIn() && isSameCompany(request.resource.data.companyId);
       allow update, delete: if isSignedIn() && isSameCompany(resource.data.companyId);
+    }
+
+    // ─── Password Reset Requests ─────────────────────────────────
+    match /password_reset_requests/{requestId} {
+      allow create: if request.resource.data.companyId != null && request.resource.data.employeeId != null;
+      allow read: if true;
+      allow update: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow delete: if isAdminForCompany(resource.data.companyId);
+    }
+
+    // ─── Password Reset Audit Logs ──────────────────────────────
+    match /password_reset_audit_logs/{logId} {
+      allow create: if request.resource.data.companyId != null;
+      allow read: if isSignedIn() && isSameCompany(resource.data.companyId);
+      allow update, delete: if isAdminForCompany(resource.data.companyId);
+    }
+
+    // ─── Notifications ───────────────────────────────────────────
+    match /notifications/{notificationId} {
+      allow read, create, update, delete: if true;
     }
 
     // ─── Default deny ─────────────────────────────────────────────

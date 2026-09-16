@@ -13,6 +13,7 @@ import '../../../shared/utils/company_password_helper.dart';
 import '../../../shared/utils/app_validators.dart';
 import '../../../shared/services/email_service.dart';
 import '../../../shared/services/password_encryption.dart';
+import '../../../shared/services/recovery_code_service.dart';
 import '../../../shared/services/app_error_handler.dart';
 import '../../../shared/models/department_model.dart';
 import '../../../shared/models/leave_request_model.dart';
@@ -297,6 +298,7 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
     List<String>? managedDepartmentNames,
     String? employeeWorkType,
     List<String>? attendanceNotificationRecipients,
+    List<String>? passwordResetApprovers,
     bool? enableCheckInReminder,
     int? checkInGraceMinutes,
     bool? enableAutoAbsent,
@@ -444,6 +446,11 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
 
       final authUid = credential.user!.uid;
 
+      // Generate initial Recovery Code for new employee
+      final initialRecoveryCode = RecoveryCodeService.generateCode();
+      final initialCodeHash = RecoveryCodeService.hashRecoveryCode(initialRecoveryCode);
+      final initialEncryptedCode = RecoveryCodeService.encryptCode(initialRecoveryCode);
+
       // Create employee record in Firestore
       final newEmp = UserModel(
         uid: authUid,
@@ -470,6 +477,9 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
         mustChangePassword: true,
         tempPassword: tempPassword,
         encryptedPassword: PasswordEncryption.encrypt(tempPassword),
+        recoveryCodeHash: initialCodeHash,
+        encryptedRecoveryCode: initialEncryptedCode,
+        recoveryStatus: 'ACTIVE',
         profileImageUrl: profileImageUrl,
         shiftId: shiftId,
         branchId: branchId,
@@ -488,6 +498,7 @@ class AdminEmployeesNotifier extends StateNotifier<AsyncValue<List<UserModel>>> 
         accountStatus: 'active',
         employeeWorkType: employeeWorkType ?? 'office',
         attendanceNotificationRecipients: attendanceNotificationRecipients ?? const ['hr', 'reporting_manager'],
+        passwordResetApprovers: passwordResetApprovers ?? const ['hr', 'reporting_manager', 'company_admin'],
         enableCheckInReminder: enableCheckInReminder ?? true,
         checkInGraceMinutes: checkInGraceMinutes ?? 30,
         enableAutoAbsent: enableAutoAbsent ?? true,

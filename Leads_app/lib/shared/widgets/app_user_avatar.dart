@@ -2,14 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user_model.dart';
 import '../providers/providers.dart';
+import '../utils/avatar_utils.dart';
 
 class AppUserAvatar extends ConsumerWidget {
   final UserModel? user;
   final String? userId;
   final String? companyId;
+  final String? name;
   final double radius;
   final Color? backgroundColor;
   final Color? iconColor;
+  final Color? textColor;
+  final double? fontSize;
   final VoidCallback? onTap;
   final bool showBorder;
   final Color? borderColor;
@@ -20,9 +24,12 @@ class AppUserAvatar extends ConsumerWidget {
     this.user,
     this.userId,
     this.companyId,
+    this.name,
     this.radius = 20,
     this.backgroundColor,
     this.iconColor,
+    this.textColor,
+    this.fontSize,
     this.onTap,
     this.showBorder = false,
     this.borderColor,
@@ -31,7 +38,6 @@ class AppUserAvatar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 1. Resolve User
     final authUser = ref.watch(authProvider).user;
     UserModel? targetUser = user;
 
@@ -45,75 +51,54 @@ class AppUserAvatar extends ConsumerWidget {
       targetUser = authUser;
     }
 
-    // Check Priority 1: Personal Profile Picture
-    final personalPictureUrl = targetUser?.profileImageUrl;
-    if (personalPictureUrl != null && personalPictureUrl.trim().isNotEmpty) {
-      return _buildAvatarContainer(
-        context: context,
-        child: CircleAvatar(
-          radius: radius,
-          backgroundColor: backgroundColor ?? Colors.grey.shade200,
-          backgroundImage: NetworkImage(personalPictureUrl.trim()),
-        ),
-      );
+    // Explicit name parameter has top priority if provided directly
+    String? displayName = name;
+    if (displayName == null || displayName.trim().isEmpty) {
+      displayName = targetUser?.name;
     }
 
-    // Check Priority 2: Company Logo
+    // If company avatar requested specifically or user missing name, look up company
     final targetCompanyId = (targetUser?.companyId != null && targetUser!.companyId.isNotEmpty)
         ? targetUser.companyId
         : (companyId ?? authUser?.companyId ?? '');
 
-    if (targetCompanyId.isNotEmpty) {
+    if ((displayName == null || displayName.trim().isEmpty) && targetCompanyId.isNotEmpty) {
       final companyAsync = ref.watch(companyStreamProvider(targetCompanyId));
       return companyAsync.when(
         data: (company) {
-          final logoUrl = company?.logoUrl;
-          if (logoUrl != null && logoUrl.trim().isNotEmpty) {
-            return _buildAvatarContainer(
-              context: context,
-              child: CircleAvatar(
-                radius: radius,
-                backgroundColor: backgroundColor ?? Colors.grey.shade200,
-                backgroundImage: NetworkImage(logoUrl.trim()),
-              ),
-            );
-          }
-          return _buildDefaultAvatar(context);
+          final compName = company?.name ?? 'Company';
+          return _buildInitialsAvatar(context, compName);
         },
-        loading: () => _buildAvatarContainer(
-          context: context,
-          child: CircleAvatar(
-            radius: radius,
-            backgroundColor: backgroundColor ?? Colors.grey.shade200,
-            child: SizedBox(
-              width: radius,
-              height: radius,
-              child: const CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ),
-        ),
-        error: (_, _) => _buildDefaultAvatar(context),
+        loading: () => _buildInitialsAvatar(context, 'U'),
+        error: (_, _) => _buildInitialsAvatar(context, 'WorkTrack'),
       );
     }
 
-    // Priority 3: Default WorkTrack Avatar
-    return _buildDefaultAvatar(context);
+    final effectiveName = displayName ?? authUser?.name ?? authUser?.companyName ?? '';
+    return _buildInitialsAvatar(context, effectiveName);
   }
 
-  Widget _buildDefaultAvatar(BuildContext context) {
-    final theme = Theme.of(context);
-    final bg = backgroundColor ?? theme.primaryColor.withValues(alpha: 0.1);
-    final ic = iconColor ?? theme.primaryColor;
+  Widget _buildInitialsAvatar(BuildContext context, String rawName) {
+    final initials = getInitials(rawName);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = backgroundColor ?? getAvatarColor(rawName, isDark: isDark);
+    final fg = textColor ?? Colors.white;
+    final computedFontSize = fontSize ?? (initials.length > 1 ? radius * 0.75 : radius * 0.85);
 
     return _buildAvatarContainer(
       context: context,
       child: CircleAvatar(
         radius: radius,
         backgroundColor: bg,
-        child: Icon(
-          Icons.person_rounded,
-          size: radius * 1.1,
-          color: ic,
+        child: Text(
+          initials,
+          style: TextStyle(
+            color: fg,
+            fontSize: computedFontSize,
+            fontWeight: FontWeight.bold,
+            letterSpacing: initials.length > 1 ? -0.5 : 0.0,
+            fontFamily: 'Inter',
+          ),
         ),
       ),
     );

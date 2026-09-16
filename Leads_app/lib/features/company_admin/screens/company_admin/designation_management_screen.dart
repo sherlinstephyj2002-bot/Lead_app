@@ -359,43 +359,46 @@ class _DesignationManagementScreenState extends ConsumerState<DesignationManagem
                           style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                         ),
                         const SizedBox(height: 8),
-                        Container(
-                          constraints: const BoxConstraints(maxHeight: 180),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
+                        Material(
+                          color: const Color(0xFFF8FAFC),
+                          shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            side: const BorderSide(color: Color(0xFFE2E8F0)),
                           ),
-                          child: eligibleDepts.isEmpty
-                              ? const Padding(
-                                  padding: EdgeInsets.all(16.0),
-                                  child: Text('No active departments found.', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                                )
-                              : ListView.separated(
-                                  shrinkWrap: true,
-                                  itemCount: eligibleDepts.length,
-                                  separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                                  itemBuilder: (context, index) {
-                                    final d = eligibleDepts[index];
-                                    final isChecked = selectedDeptIds.contains(d.departmentId);
-                                    return CheckboxListTile(
-                                      value: isChecked,
-                                      dense: true,
-                                      title: Text(d.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                      activeColor: const Color(0xFF4F46E5),
-                                      controlAffinity: ListTileControlAffinity.leading,
-                                      onChanged: (val) {
-                                        setModalState(() {
-                                          if (val == true) {
-                                            selectedDeptIds.add(d.departmentId);
-                                          } else {
-                                            selectedDeptIds.remove(d.departmentId);
-                                          }
-                                        });
-                                      },
-                                    );
-                                  },
-                                ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Container(
+                            constraints: const BoxConstraints(maxHeight: 180),
+                            child: eligibleDepts.isEmpty
+                                ? const Padding(
+                                    padding: EdgeInsets.all(16.0),
+                                    child: Text('No active departments found.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                  )
+                                : ListView.separated(
+                                    shrinkWrap: true,
+                                    itemCount: eligibleDepts.length,
+                                    separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                                    itemBuilder: (context, index) {
+                                      final d = eligibleDepts[index];
+                                      final isChecked = selectedDeptIds.contains(d.departmentId);
+                                      return CheckboxListTile(
+                                        value: isChecked,
+                                        dense: true,
+                                        title: Text(d.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                                        activeColor: const Color(0xFF4F46E5),
+                                        controlAffinity: ListTileControlAffinity.leading,
+                                        onChanged: (val) {
+                                          setModalState(() {
+                                            if (val == true) {
+                                              selectedDeptIds.add(d.departmentId);
+                                            } else {
+                                              selectedDeptIds.remove(d.departmentId);
+                                            }
+                                          });
+                                        },
+                                      );
+                                    },
+                                  ),
+                          ),
                         ),
                         if (FeatureFlags.enableDesignationLevels) ...[
                           const SizedBox(height: 12),

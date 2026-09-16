@@ -22,6 +22,8 @@ import 'package:worktrack/features/company_admin/models/salary_structure_model.d
 import 'package:worktrack/features/company_admin/providers/company_admin_providers.dart';
 import 'package:worktrack/shared/widgets/multi_select_department_dropdown.dart';
 import 'package:worktrack/shared/utils/organizational_role_helper.dart';
+import 'package:worktrack/shared/widgets/searchable_dropdown.dart';
+import 'package:worktrack/shared/utils/company_config_importer.dart';
 import 'employee_profile_screen.dart';
 
 class EmployeeManagementScreen extends ConsumerStatefulWidget {
@@ -816,8 +818,6 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
     String selectedRole = _normalizeRole(existingEmp?.role ?? UserRoles.employee);
     String selectedStatus = (existingEmp?.status ?? 'active').toLowerCase().trim();
 
-    String? _uploadedImageUrl = existingEmp?.profileImageUrl;
-
     bool isSubmitting = false;
     showDialog(
       context: context,
@@ -974,7 +974,6 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                   managerId: validManagerId,
                   joiningDate: selectedJoinDate,
                   employmentType: validEmpType,
-                  profileImageUrl: _uploadedImageUrl,
                   shiftId: validShiftId,
                   branchId: validBranchId,
                   branchName: branchName.isNotEmpty ? branchName : null,
@@ -1048,7 +1047,6 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                   managerId: validManagerId,
                   joiningDate: selectedJoinDate,
                   employmentType: validEmpType,
-                  profileImageUrl: _uploadedImageUrl,
                   shiftId: validShiftId,
                   branchId: validBranchId,
                   branchName: branchName.isNotEmpty ? branchName : null,
@@ -1241,7 +1239,7 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                 constraints: const BoxConstraints(maxWidth: 720),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final isDesktop = constraints.maxWidth >= 540;
+                    final isDesktop = constraints.maxWidth >= 640;
 
                     // Form Fields
                     final nameField = TextFormField(
@@ -1291,49 +1289,110 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                       value: validDeptId,
                       dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
                       style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                      decoration: _cleanInputDecoration(Icons.business_center_rounded, hintText: 'Select Department *'),
+                      decoration: _cleanInputDecoration(Icons.business_center_rounded, hintText: 'Select Primary Department *'),
                       items: uniqueDepts.map((d) => DropdownMenuItem(value: d.departmentId, child: Text(d.departmentName))).toList(),
                       validator: (v) => (v == null || v.isEmpty) ? 'Please select a department.' : null,
                       onChanged: (val) {
                         setModalState(() {
                           selectedDeptId = val;
-                          selectedDesigId = null;
-                          selectedDesigName = '';
-                          selectedRoleId = null;
-                          selectedRoleName = '';
-                          selectedManagedDeptIds.clear();
-                          if (val != null) selectedManagedDeptIds.add(val);
+                          if (selectedDesigId != null) {
+                            final currentDesig = uniqueDesigs.where((d) => d.designationId == selectedDesigId).firstOrNull;
+                            final isStillApplicable = currentDesig != null && (
+                              currentDesig.applicableDepartmentIds.isEmpty ||
+                              currentDesig.applicableDepartmentIds.contains(val) ||
+                              currentDesig.departmentId == val
+                            );
+                            if (!isStillApplicable) {
+                              selectedDesigId = null;
+                              selectedDesigName = '';
+                              selectedRoleId = null;
+                              selectedRoleName = '';
+                              selectedManagedDeptIds.clear();
+                              if (val != null) selectedManagedDeptIds.add(val);
+                            } else if (val != null && !selectedManagedDeptIds.contains(val)) {
+                              selectedManagedDeptIds.add(val);
+                            }
+                          } else {
+                            selectedManagedDeptIds.clear();
+                            if (val != null) selectedManagedDeptIds.add(val);
+                          }
                         });
                       },
                     );
 
                     final availableDesigs = (selectedDeptId == null || selectedDeptId!.isEmpty)
-                        ? <DesignationModel>[]
-                        : uniqueDesigs.where((d) => d.applicableDepartmentIds.contains(selectedDeptId) || d.departmentId == selectedDeptId).toList();
+                        ? uniqueDesigs
+                        : uniqueDesigs.where((d) {
+                            if (d.applicableDepartmentIds.isNotEmpty) {
+                              return d.applicableDepartmentIds.contains(selectedDeptId);
+                            }
+                            return d.departmentId == selectedDeptId || d.departmentId.isEmpty;
+                          }).toList();
 
-                    final desigDropdown = DropdownButtonFormField<String>(
-                      value: validDesigId,
-                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                      decoration: _cleanInputDecoration(
-                        Icons.badge_outlined,
-                        hintText: (selectedDeptId == null || selectedDeptId!.isEmpty)
-                            ? 'Select Department first'
-                            : 'Select Designation *',
+                    final desigDropdown = SearchableSingleSelectDropdown<DesignationModel>(
+                      label: 'Designation *',
+                      hint: (selectedDeptId == null || selectedDeptId!.isEmpty) ? 'Select Department first' : 'Select Designation',
+                      icon: Icons.badge_outlined,
+                      enabled: selectedDeptId != null && selectedDeptId!.isNotEmpty,
+                      items: availableDesigs,
+                      selectedItem: availableDesigs.where((d) => d.designationId == validDesigId).firstOrNull,
+                      customActionLabel: '+ Add Custom Designation',
+                      onCustomActionTap: () => CompanyConfigImporter.showCustomDesignationDialog(
+                        context,
+                        ref,
+                        uniqueDepts,
+                        onCreated: (newDesig) {
+                          setModalState(() {
+                            selectedDesigId = newDesig.designationId;
+                            selectedDesigName = newDesig.designationName;
+                            selectedManagedDeptIds.clear();
+                            selectedManagedDeptIds.addAll(newDesig.applicableDepartmentIds);
+                            if (selectedDeptId != null && selectedDeptId!.isNotEmpty) {
+                              selectedManagedDeptIds.add(selectedDeptId!);
+                            }
+                          });
+                        },
                       ),
-                      items: availableDesigs.map((d) => DropdownMenuItem(value: d.designationId, child: Text(d.designationName))).toList(),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Please select a designation.' : null,
+                      itemAsString: (d) {
+                        final mappedDepts = d.applicableDepartmentIds;
+                        final mappedNames = mappedDepts.map((id) {
+                          final dept = uniqueDepts.firstWhere((dept) => dept.departmentId == id, orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: ''));
+                          return dept.departmentName;
+                        }).where((n) => n.isNotEmpty).toList();
+
+                        return d.designationName + (mappedNames.isNotEmpty ? ' — ${mappedNames.join(' / ')}' : '');
+                      },
+                      validatorError: 'Please select a designation.',
                       onChanged: (val) {
                         setModalState(() {
-                          selectedDesigId = val;
+                          selectedDesigId = val?.designationId;
                           selectedRoleId = null;
                           selectedRoleName = '';
+                          selectedManagedDeptIds.clear();
+
                           if (val != null) {
-                            final match = uniqueDesigs.firstWhere(
-                              (d) => d.designationId == val,
-                              orElse: () => DesignationModel(designationId: '', companyId: '', designationName: '', designationLevel: 1, createdAt: DateTime.now(), updatedAt: DateTime.now()),
+                            selectedDesigName = val.designationName;
+                            final mapped = val.applicableDepartmentIds;
+                            if (mapped.isNotEmpty) {
+                              selectedManagedDeptIds.addAll(mapped);
+                            }
+                            if (selectedDeptId != null && selectedDeptId!.isNotEmpty && !selectedManagedDeptIds.contains(selectedDeptId)) {
+                              selectedManagedDeptIds.add(selectedDeptId!);
+                            }
+
+                            final currentDept = uniqueDepts.where((d) => d.departmentId == selectedDeptId).firstOrNull;
+                            final autoRoles = OrganizationalRoleHelper.getAvailableRoles(
+                              department: currentDept,
+                              designation: val,
+                              allRoles: allRoles,
                             );
-                            selectedDesigName = match.designationName;
+                            if (autoRoles.isNotEmpty) {
+                              selectedRoleId = autoRoles.first.roleId;
+                              selectedRoleName = autoRoles.first.roleName;
+                              selectedRole = _normalizeRole(autoRoles.first.roleName);
+                            }
+                          } else if (selectedDeptId != null) {
+                            selectedManagedDeptIds.add(selectedDeptId!);
                           }
                         });
                       },
@@ -1359,27 +1418,34 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                       }
                     }
 
-                    final roleDropdown = DropdownButtonFormField<String>(
-                      value: selectedRoleId,
-                      dropdownColor: isDark ? const Color(0xFF1E293B) : Colors.white,
-                      style: TextStyle(fontFamily: 'Inter', fontSize: 14, color: isDark ? Colors.white : const Color(0xFF1B1B24)),
-                      decoration: _cleanInputDecoration(
-                        Icons.work_outline_rounded,
-                        hintText: (selectedDesigId == null || selectedDesigId!.isEmpty)
-                            ? 'Select Designation first'
-                            : 'Select Role *',
+                    final roleDropdown = SearchableSingleSelectDropdown<RoleModel>(
+                      label: 'Role *',
+                      hint: (selectedDesigId == null || selectedDesigId!.isEmpty) ? 'Select Designation first' : 'Select Role',
+                      icon: Icons.work_outline_rounded,
+                      enabled: selectedDesigId != null && selectedDesigId!.isNotEmpty,
+                      items: availableRoles,
+                      selectedItem: availableRoles.where((r) => r.roleId == validRoleId).firstOrNull,
+                      customActionLabel: '+ Add Custom Role',
+                      onCustomActionTap: () => CompanyConfigImporter.showCustomRoleDialog(
+                        context,
+                        ref,
+                        uniqueDepts,
+                        onCreated: (newRole) {
+                          setModalState(() {
+                            selectedRoleId = newRole.roleId;
+                            selectedRoleName = newRole.roleName;
+                            selectedRole = _normalizeRole(newRole.roleName);
+                          });
+                        },
                       ),
-                      items: availableRoles.map((r) => DropdownMenuItem(value: r.roleId, child: Text(r.roleName))).toList(),
-                      validator: (v) => (v == null || v.isEmpty) ? 'Please select a role.' : null,
+                      itemAsString: (r) => r.roleName,
+                      validatorError: 'Please select a role.',
                       onChanged: (val) {
                         setModalState(() {
-                          selectedRoleId = val;
+                          selectedRoleId = val?.roleId;
                           if (val != null) {
-                            final match = availableRoles.firstWhere(
-                              (r) => r.roleId == val,
-                              orElse: () => RoleModel(roleId: '', companyId: '', roleName: '', departmentId: '', designationId: '', createdAt: DateTime.now(), updatedAt: DateTime.now()),
-                            );
-                            selectedRoleName = match.roleName;
+                            selectedRoleName = val.roleName;
+                            selectedRole = _normalizeRole(val.roleName);
                           }
                         });
                       },
@@ -1390,17 +1456,148 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                       orElse: () => DesignationModel(designationId: '', companyId: '', designationName: '', designationLevel: 1, createdAt: DateTime.now(), updatedAt: DateTime.now()),
                     );
 
-                    final managedDeptWidget = MultiSelectDepartmentDropdown(
-                      departments: uniqueDepts,
-                      selectedDepartmentIds: selectedManagedDeptIds.toList(),
-                      label: 'Managed Departments',
-                      hint: 'Select managed departments',
-                      onChanged: (ids) {
-                        setModalState(() {
-                          selectedManagedDeptIds.clear();
-                          selectedManagedDeptIds.addAll(ids);
-                        });
-                      },
+                    final mappedDeptIds = matchedDesig.applicableDepartmentIds;
+
+                    final managedDeptWidget = Material(
+                      color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.hub_outlined, size: 16, color: isDark ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5)),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Department Responsibilities',
+                                  style: TextStyle(
+                                    fontFamily: 'Inter',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    matchedDesig.designationName.isNotEmpty ? '${matchedDesig.designationName} Config' : 'Company Wizard Config',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.end,
+                                    style: TextStyle(
+                                      fontFamily: 'Inter',
+                                      fontSize: 10,
+                                      fontStyle: FontStyle.italic,
+                                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Departments assigned to this designation in Company Wizard:',
+                              style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                            ),
+                            const SizedBox(height: 8),
+                            Divider(height: 1, color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                            const SizedBox(height: 6),
+                            if (uniqueDepts.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                                child: Text(
+                                  'No departments configured for this company. Please complete Company Setup Wizard.',
+                                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.orange.shade700),
+                                ),
+                              )
+                            else
+                              Column(
+                                children: uniqueDepts.map((dept) {
+                                  final isPrimary = dept.departmentId == selectedDeptId;
+                                  final isChecked = selectedManagedDeptIds.contains(dept.departmentId) || isPrimary;
+                                  final isWizardMapped = mappedDeptIds.contains(dept.departmentId);
+
+                                  return CheckboxListTile(
+                                    value: isChecked,
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    activeColor: const Color(0xFF5B4CF0),
+                                    controlAffinity: ListTileControlAffinity.leading,
+                                    title: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            dept.departmentName,
+                                            style: TextStyle(
+                                              fontFamily: 'Inter',
+                                              fontSize: 13,
+                                              fontWeight: isPrimary ? FontWeight.bold : FontWeight.w500,
+                                              color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        if (isPrimary)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: const Color(0xFF6366F1), width: 0.8),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.star_rounded, size: 10, color: Color(0xFF6366F1)),
+                                                SizedBox(width: 2),
+                                                Text(
+                                                  'Primary',
+                                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF6366F1)),
+                                                ),
+                                              ],
+                                            ),
+                                          )
+                                        else if (isWizardMapped)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1), width: 0.8),
+                                            ),
+                                            child: Text(
+                                              'Wizard Mapped',
+                                              style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    onChanged: isPrimary
+                                        ? null
+                                        : (val) {
+                                            setModalState(() {
+                                              if (val == true) {
+                                                selectedManagedDeptIds.add(dept.departmentId);
+                                              } else {
+                                                selectedManagedDeptIds.remove(dept.departmentId);
+                                              }
+                                              if (selectedDeptId != null) selectedManagedDeptIds.add(selectedDeptId!);
+                                            });
+                                          },
+                                  );
+                                }).toList(),
+                              ),
+                          ],
+                        ),
+                      ),
                     );
 
                     final managerDropdown = DropdownButtonFormField<String>(
@@ -1618,10 +1815,8 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                                     _buildFieldWrapper('Reporting Manager', false, managerDropdown),
                                     isDesktop,
                                   ),
-                                  if (matchedDesig.isManagerial) ...[
-                                    const SizedBox(height: 14),
-                                    _buildFieldWrapper('Managed Departments (Leadership Assignment)', false, managedDeptWidget),
-                                  ],
+                                  const SizedBox(height: 14),
+                                  _buildFieldWrapper('Department Responsibilities', false, managedDeptWidget),
                                   if (FeatureFlags.enableBranchManagement) ...[
                                     const SizedBox(height: 14),
                                     _buildFieldWrapper('Assign Branch', true, branchDropdown),
@@ -2338,14 +2533,16 @@ class _MultiSelectDepartmentFormFieldState extends State<MultiSelectDepartmentFo
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 240),
-                      decoration: BoxDecoration(
-                        color: widget.isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                    Material(
+                      color: widget.isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                      shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: widget.isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                        side: BorderSide(color: widget.isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
                       ),
-                      child: filtered.isEmpty
+                      clipBehavior: Clip.antiAlias,
+                      child: Container(
+                        constraints: const BoxConstraints(maxHeight: 240),
+                        child: filtered.isEmpty
                           ? const Padding(
                               padding: EdgeInsets.all(16.0),
                               child: Text('No departments found.', style: TextStyle(fontSize: 12, color: Colors.grey)),
@@ -2382,6 +2579,7 @@ class _MultiSelectDepartmentFormFieldState extends State<MultiSelectDepartmentFo
                                 );
                               },
                             ),
+                      ),
                     ),
                   ],
                 ),

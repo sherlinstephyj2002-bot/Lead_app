@@ -1,6 +1,3 @@
-import 'dart:io' as io;
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -8,7 +5,6 @@ import 'package:flutter/services.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/models/company_model.dart';
 import '../../../constants/user_roles.dart';
-import '../../../constants/feature_flags.dart';
 import '../../../shared/widgets/company_logo_avatar.dart';
 import '../../../shared/utils/app_validators.dart';
 import '../../../shared/utils/app_notification.dart';
@@ -136,94 +132,7 @@ class _CompanyProfileScreenState extends ConsumerState<CompanyProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _pickAndUploadLogo() async {
-    if (!FeatureFlags.enableImageUpload) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File upload is currently disabled.')),
-        );
-      }
-      return;
-    }
-    try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.image,
-        allowMultiple: false,
-        withData: true,
-      );
 
-      if (result == null || result.files.isEmpty) return;
-
-      final file = result.files.single;
-      final fileName = file.name;
-      var fileBytes = file.bytes;
-
-      if (fileBytes == null && file.path != null && !kIsWeb) {
-        fileBytes = await io.File(file.path!).readAsBytes();
-      }
-
-      if (fileBytes == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not read file data. Please try again.')),
-          );
-        }
-        return;
-      }
-
-      if (fileBytes.lengthInBytes > 2 * 1024 * 1024) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Logo size exceeds the 2MB limit.')),
-          );
-        }
-        return;
-      }
-
-      setState(() => _isSaving = true);
-      final success = await ref.read(companyProvider.notifier).uploadLogo(fileName, fileBytes);
-      setState(() => _isSaving = false);
-
-      if (!mounted) return;
-      if (success) {
-        AppNotification.showSuccess(context, 'Company logo uploaded successfully.');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to upload logo.'),
-            backgroundColor: Color(0xFFEF4444),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to upload logo: $e'),
-            backgroundColor: const Color(0xFFEF4444),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _removeLogo() async {
-    setState(() => _isSaving = true);
-    final success = await ref.read(companyProvider.notifier).removeLogo();
-    setState(() => _isSaving = false);
-
-    if (!mounted) return;
-    if (success) {
-      AppNotification.showSuccess(context, 'Company logo removed successfully.');
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to remove logo.'),
-          backgroundColor: Color(0xFFEF4444),
-        ),
-      );
-    }
-  }
 
   void _saveCompanyDetails() async {
     if (!_formKey.currentState!.validate()) return;
@@ -328,43 +237,17 @@ class _CompanyProfileScreenState extends ConsumerState<CompanyProfileScreen> {
                   ),
                   child: Row(
                     children: [
-                      Stack(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: const Color(0xFFE2E8F0), width: 3),
-                            ),
-                            child: CompanyLogoAvatar(
-                              companyId: company.companyId,
-                              radius: 44,
-                              backgroundColor: const Color(0xFF5B4CF0).withOpacity(0.08),
-                              iconColor: const Color(0xFF5B4CF0),
-                            ),
-                          ),
-                          if (isAdmin && FeatureFlags.enableImageUpload)
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: Material(
-                                color: const Color(0xFF5B4CF0),
-                                elevation: 2,
-                                shape: const CircleBorder(),
-                                child: InkWell(
-                                  onTap: _isSaving ? null : _pickAndUploadLogo,
-                                  customBorder: const CircleBorder(),
-                                  child: const Padding(
-                                    padding: EdgeInsets.all(6.0),
-                                    child: Icon(
-                                      Icons.edit_rounded,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFFE2E8F0), width: 3),
+                        ),
+                        child: CompanyLogoAvatar(
+                          companyId: company.companyId,
+                          radius: 44,
+                          backgroundColor: const Color(0xFF5B4CF0).withOpacity(0.08),
+                          iconColor: const Color(0xFF5B4CF0),
+                        ),
                       ),
                       const SizedBox(width: 20),
                       Expanded(
@@ -654,21 +537,7 @@ class _CompanyProfileScreenState extends ConsumerState<CompanyProfileScreen> {
               );
             },
           ),
-          if (isAdmin && company.logoUrl != null && company.logoUrl!.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            TextButton.icon(
-              onPressed: _isSaving ? null : _removeLogo,
-              icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFBA1A1A), size: 18),
-              label: const Text(
-                'Remove Logo',
-                style: TextStyle(color: Color(0xFFBA1A1A), fontWeight: FontWeight.bold, fontSize: 13),
-              ),
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
-          ],
+
         ],
       ),
     );

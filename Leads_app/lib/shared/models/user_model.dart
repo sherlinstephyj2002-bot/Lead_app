@@ -61,6 +61,7 @@ class UserModel {
   // Attendance Automation Settings
   final String employeeWorkType; // 'office' (Normal Office Employee) or 'field' (Field Employee)
   final List<String> attendanceNotificationRecipients; // ['hr', 'reporting_manager', 'team_leader', 'company_admin']
+  final List<String> passwordResetApprovers; // ['hr', 'reporting_manager', 'team_leader', 'company_admin']
   final bool enableCheckInReminder;
   final int checkInGraceMinutes;
   final bool enableAutoAbsent;
@@ -69,6 +70,14 @@ class UserModel {
   final int checkOutGraceMinutes;
   final bool enableAutoCheckout;
   final int autoCheckoutGraceMinutes;
+
+  // Security PIN & Recovery System Fields
+  final String? securityPinHash;
+  final bool securityPinConfigured;
+  final String? recoveryCodeHash;
+  final String? encryptedRecoveryCode;
+  final String? recoveryStatus;
+  final DateTime? lastRecoveryRequestAt;
 
   UserModel({
     required this.uid,
@@ -128,6 +137,7 @@ class UserModel {
     this.managedDepartmentNames = const [],
     this.employeeWorkType = 'office',
     this.attendanceNotificationRecipients = const ['hr', 'reporting_manager'],
+    this.passwordResetApprovers = const ['hr', 'reporting_manager', 'company_admin'],
     this.enableCheckInReminder = true,
     this.checkInGraceMinutes = 30,
     this.enableAutoAbsent = true,
@@ -136,6 +146,12 @@ class UserModel {
     this.checkOutGraceMinutes = 30,
     this.enableAutoCheckout = false,
     this.autoCheckoutGraceMinutes = 180,
+    this.securityPinHash,
+    this.securityPinConfigured = false,
+    this.recoveryCodeHash,
+    this.encryptedRecoveryCode,
+    this.recoveryStatus,
+    this.lastRecoveryRequestAt,
   });
 
   /// Dedicated Admin Code for Company Admin (e.g., ADM-JAS001)
@@ -296,6 +312,10 @@ class UserModel {
               ?.map((e) => e.toString())
               .toList() ??
           const ['hr', 'reporting_manager'],
+      passwordResetApprovers: (map['passwordResetApprovers'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const ['hr', 'reporting_manager', 'company_admin'],
       enableCheckInReminder: (map['enableCheckInReminder'] as bool?) ?? true,
       checkInGraceMinutes: (map['checkInGraceMinutes'] as num?)?.toInt() ?? 30,
       enableAutoAbsent: (map['enableAutoAbsent'] as bool?) ?? true,
@@ -304,6 +324,14 @@ class UserModel {
       checkOutGraceMinutes: (map['checkOutGraceMinutes'] as num?)?.toInt() ?? 30,
       enableAutoCheckout: (map['enableAutoCheckout'] as bool?) ?? (map['employeeWorkType'] == 'field'),
       autoCheckoutGraceMinutes: (map['autoCheckoutGraceMinutes'] as num?)?.toInt() ?? 180,
+      securityPinHash: map['securityPinHash'],
+      securityPinConfigured: (map['securityPinConfigured'] as bool?) ?? false,
+      recoveryCodeHash: map['recoveryCodeHash'],
+      encryptedRecoveryCode: map['encryptedRecoveryCode'],
+      recoveryStatus: map['recoveryStatus'],
+      lastRecoveryRequestAt: map['lastRecoveryRequestAt'] != null
+          ? (map['lastRecoveryRequestAt'] as Timestamp).toDate()
+          : null,
     );
   }
 
@@ -367,6 +395,7 @@ class UserModel {
       'managedDepartmentNames': managedDepartmentNames,
       'employeeWorkType': employeeWorkType,
       'attendanceNotificationRecipients': attendanceNotificationRecipients,
+      'passwordResetApprovers': passwordResetApprovers,
       'enableCheckInReminder': enableCheckInReminder,
       'checkInGraceMinutes': checkInGraceMinutes,
       'enableAutoAbsent': enableAutoAbsent,
@@ -375,6 +404,12 @@ class UserModel {
       'checkOutGraceMinutes': checkOutGraceMinutes,
       'enableAutoCheckout': enableAutoCheckout,
       'autoCheckoutGraceMinutes': autoCheckoutGraceMinutes,
+      'securityPinHash': securityPinHash,
+      'securityPinConfigured': securityPinConfigured,
+      'recoveryCodeHash': recoveryCodeHash,
+      'encryptedRecoveryCode': encryptedRecoveryCode,
+      'recoveryStatus': recoveryStatus,
+      'lastRecoveryRequestAt': lastRecoveryRequestAt != null ? Timestamp.fromDate(lastRecoveryRequestAt!) : null,
     };
   }
 
@@ -436,6 +471,7 @@ class UserModel {
     List<String>? managedDepartmentNames,
     String? employeeWorkType,
     List<String>? attendanceNotificationRecipients,
+    List<String>? passwordResetApprovers,
     bool? enableCheckInReminder,
     int? checkInGraceMinutes,
     bool? enableAutoAbsent,
@@ -444,6 +480,12 @@ class UserModel {
     int? checkOutGraceMinutes,
     bool? enableAutoCheckout,
     int? autoCheckoutGraceMinutes,
+    String? securityPinHash,
+    bool? securityPinConfigured,
+    String? recoveryCodeHash,
+    String? encryptedRecoveryCode,
+    String? recoveryStatus,
+    DateTime? lastRecoveryRequestAt,
   }) {
     return UserModel(
       uid: uid ?? this.uid,
@@ -503,6 +545,7 @@ class UserModel {
       managedDepartmentNames: managedDepartmentNames ?? this.managedDepartmentNames,
       employeeWorkType: employeeWorkType ?? this.employeeWorkType,
       attendanceNotificationRecipients: attendanceNotificationRecipients ?? this.attendanceNotificationRecipients,
+      passwordResetApprovers: passwordResetApprovers ?? this.passwordResetApprovers,
       enableCheckInReminder: enableCheckInReminder ?? this.enableCheckInReminder,
       checkInGraceMinutes: checkInGraceMinutes ?? this.checkInGraceMinutes,
       enableAutoAbsent: enableAutoAbsent ?? this.enableAutoAbsent,
@@ -511,6 +554,12 @@ class UserModel {
       checkOutGraceMinutes: checkOutGraceMinutes ?? this.checkOutGraceMinutes,
       enableAutoCheckout: enableAutoCheckout ?? this.enableAutoCheckout,
       autoCheckoutGraceMinutes: autoCheckoutGraceMinutes ?? this.autoCheckoutGraceMinutes,
+      securityPinHash: securityPinHash ?? this.securityPinHash,
+      securityPinConfigured: securityPinConfigured ?? this.securityPinConfigured,
+      recoveryCodeHash: recoveryCodeHash ?? this.recoveryCodeHash,
+      encryptedRecoveryCode: encryptedRecoveryCode ?? this.encryptedRecoveryCode,
+      recoveryStatus: recoveryStatus ?? this.recoveryStatus,
+      lastRecoveryRequestAt: lastRecoveryRequestAt ?? this.lastRecoveryRequestAt,
     );
   }
 }

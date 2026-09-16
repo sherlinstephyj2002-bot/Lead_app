@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../constants/user_roles.dart';
+import '../utils/avatar_utils.dart';
 
 class GoogleAccountChooserSheet extends StatefulWidget {
   const GoogleAccountChooserSheet({super.key});
@@ -156,7 +157,7 @@ class _GoogleAccountChooserSheetState extends State<GoogleAccountChooserSheet> {
                   final email = account['email']!;
                   final name = account['name']!;
                   final role = account['role']!;
-                  final initial = account['initial']!;
+                  final initial = getInitials(name);
                   final Color avatarColor = account['avatarColor']!;
                   final bool isSignedOut = account['signedOut']!;
 

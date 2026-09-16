@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:worktrack/shared/providers/permissions_provider.dart';
 import 'package:worktrack/constants/feature_flags.dart';
+import 'package:worktrack/shared/providers/password_reset_provider.dart';
 
 class CompanyAdminMenuScreen extends ConsumerWidget {
   const CompanyAdminMenuScreen({super.key});
@@ -57,6 +58,15 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
         'route': '/employee-requests',
         'color': const Color(0xFF8B5CF6),
         'permission': 'settings.manage',
+      },
+      {
+        'category': 'EMPLOYEE MANAGEMENT',
+        'title': 'Password Reset Requests',
+        'subtitle': 'Review & approve employee password recovery requests',
+        'icon': Icons.lock_reset_rounded,
+        'route': '/company-admin/password-reset-requests',
+        'color': const Color(0xFFE11D48),
+        'permission': 'employee.view',
       },
 
       // 2. SALARY & PAYROLL
@@ -335,7 +345,7 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
                   itemCount: catItems.length,
                   itemBuilder: (context, index) {
                     final item = catItems[index];
-                    return _buildMenuCard(context, item);
+                    return _buildMenuCard(context, ref, item);
                   },
                 ),
                 const SizedBox(height: 24),
@@ -348,13 +358,17 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildMenuCard(BuildContext context, Map<String, dynamic> item) {
+  Widget _buildMenuCard(BuildContext context, WidgetRef ref, Map<String, dynamic> item) {
     final color = item['color'] as Color;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cardBg = isDark ? Theme.of(context).cardColor : Colors.white;
     final titleColor = isDark ? Colors.white : const Color(0xFF1E293B);
     final subtitleColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
     final borderCol = isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0);
+
+    final isPasswordReset = item['route'] == '/company-admin/password-reset-requests';
+    final pendingRequests = isPasswordReset ? (ref.watch(pendingPasswordResetRequestsProvider).value ?? []) : [];
+    final pendingCount = pendingRequests.length;
 
     return Card(
       elevation: 0,
@@ -372,14 +386,36 @@ class CompanyAdminMenuScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Icon Container
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: isDark ? 0.2 : 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(item['icon'] as IconData, color: color, size: 24),
+              // Icon Container with optional Badge
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: isDark ? 0.2 : 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(item['icon'] as IconData, color: color, size: 24),
+                  ),
+                  if (isPasswordReset && pendingCount > 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '$pendingCount Pending',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    ),
+                ],
               ),
               // Text info
               Expanded(

@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import '../../../shared/providers/providers.dart';
 import '../../../shared/models/company_model.dart';
 import '../../../shared/models/department_model.dart';
@@ -18,6 +16,7 @@ import '../../../constants/feature_flags.dart';
 import '../../../shared/utils/shift_duration_calculator.dart';
 import '../../../shared/widgets/multi_select_department_dropdown.dart';
 import '../../../shared/utils/app_notification.dart';
+import '../../../shared/widgets/app_user_avatar.dart';
 import '../../../shared/widgets/searchable_dropdown.dart';
 
 class OnboardingWizardScreen extends ConsumerStatefulWidget {
@@ -150,38 +149,6 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
         return 'Holiday Calendar';
       default:
         return 'Review & Finish';
-    }
-  }
-
-  // Handle logo image upload to Firebase Storage
-  Future<void> _uploadLogo() async {
-    if (!FeatureFlags.enableImageUpload) {
-      _showSnackBar('File upload is currently disabled.', isError: true);
-      return;
-    }
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 75);
-    if (pickedFile == null) return;
-
-    setState(() => _isUploadingLogo = true);
-    try {
-      final fileBytes = await pickedFile.readAsBytes();
-      final fileName = pickedFile.name;
-      final company = ref.read(companyProvider).value;
-      if (company == null) return;
-
-      final storagePath = 'companies/${company.companyId}/logo_${DateTime.now().millisecondsSinceEpoch}_$fileName';
-      final uploadTask = await FirebaseStorage.instance.ref(storagePath).putData(fileBytes);
-      final downloadUrl = await uploadTask.ref.getDownloadURL();
-
-      setState(() {
-        _logoUrl = downloadUrl;
-      });
-      _showSnackBar('Logo uploaded successfully.');
-    } catch (e) {
-      _showSnackBar('Failed to upload logo: $e', isError: true);
-    } finally {
-      setState(() => _isUploadingLogo = false);
     }
   }
 
@@ -336,6 +303,11 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
                   : () => _skipWizard(),
             ),
             actions: [
+              TextButton.icon(
+                onPressed: () => _showConfigImportDialog(company.companyId),
+                icon: const Icon(Icons.file_upload_outlined, color: Colors.white, size: 18),
+                label: const Text('Import Config', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              ),
               TextButton(
                 onPressed: _skipWizard,
                 child: const Text('Skip & Exit', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
@@ -1001,38 +973,9 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
               const Text('Company Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 16),
               Center(
-                child: Column(
-                  children: [
-                    Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 50,
-                          backgroundColor: const Color(0xFFEFF6FF),
-                          backgroundImage: _logoUrl != null ? NetworkImage(_logoUrl!) : null,
-                          child: _logoUrl == null
-                              ? Icon(Icons.business_rounded, size: 50, color: Colors.blue[300])
-                              : null,
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: CircleAvatar(
-                            backgroundColor: Theme.of(context).primaryColor,
-                            radius: 16,
-                            child: _isUploadingLogo
-                                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                : IconButton(
-                                    icon: const Icon(Icons.camera_alt, color: Colors.white, size: 14),
-                                    onPressed: _uploadLogo,
-                                    padding: EdgeInsets.zero,
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text('Company Logo', style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
-                  ],
+                child: AppUserAvatar(
+                  name: _nameController.text.isNotEmpty ? _nameController.text : 'Company',
+                  radius: 40,
                 ),
               ),
               const SizedBox(height: 20),
@@ -2858,6 +2801,325 @@ class _OnboardingWizardScreenState extends ConsumerState<OnboardingWizardScreen>
     if (confirm == true) {
       await ref.read(adminHolidaysProvider.notifier).deleteHoliday(holiday.holidayId);
       _showSnackBar('Holiday deleted.');
+    }
+  }
+
+  // ==========================================
+  // TEXT FILE / TEXT INPUT CONFIGURATION IMPORTER
+  // ==========================================
+  void _showConfigImportDialog(String companyId) {
+    final textCtrl = TextEditingController(text: '''Departments:
+Finance
+Marketing
+Sales
+Human Resources
+
+Designations:
+Manager: Finance, Marketing, Sales
+HR Executive: Human Resources, Finance
+Finance Manager: Finance
+
+Roles:
+Manager: Finance, Marketing, Sales
+HR Executive: Human Resources''');
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.file_upload_outlined, color: Color(0xFF5B4CF0)),
+            SizedBox(width: 8),
+            Text('Import Company Configuration', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter or paste text configuration for Departments, Designations, Roles, and Responsibilities:',
+                style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: textCtrl,
+                maxLines: 12,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white),
+            onPressed: () {
+              final raw = textCtrl.text.trim();
+              if (raw.isEmpty) {
+                _showSnackBar('Please enter configuration text to import.', isError: true);
+                return;
+              }
+              Navigator.pop(ctx);
+              _processAndPreviewImport(companyId, raw);
+            },
+            child: const Text('Parse & Preview'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _processAndPreviewImport(String companyId, String rawText) {
+    final lines = rawText.split('\n').map((l) => l.trim()).toList();
+
+    List<String> parsedDepts = [];
+    List<Map<String, dynamic>> parsedDesigs = [];
+    List<Map<String, dynamic>> parsedRoles = [];
+
+    String currentSection = '';
+
+    for (final line in lines) {
+      if (line.isEmpty || line.startsWith('#') || line.startsWith('//')) continue;
+
+      final lower = line.toLowerCase();
+      if (lower.startsWith('departments:')) {
+        currentSection = 'departments';
+        continue;
+      } else if (lower.startsWith('designations:')) {
+        currentSection = 'designations';
+        continue;
+      } else if (lower.startsWith('roles:')) {
+        currentSection = 'roles';
+        continue;
+      } else if (lower.startsWith('designation responsibilities:')) {
+        currentSection = 'designations';
+        continue;
+      } else if (lower.startsWith('role responsibilities:')) {
+        currentSection = 'roles';
+        continue;
+      }
+
+      if (currentSection == 'departments') {
+        final name = line.replaceAll('-', '').trim();
+        if (name.isNotEmpty && !parsedDepts.contains(name)) {
+          parsedDepts.add(name);
+        }
+      } else if (currentSection == 'designations') {
+        if (line.contains(':')) {
+          final parts = line.split(':');
+          final desigName = parts[0].trim();
+          final deptsList = parts[1].split(',').map((d) => d.trim()).where((d) => d.isNotEmpty).toList();
+          if (desigName.isNotEmpty) {
+            parsedDesigs.add({'name': desigName, 'departments': deptsList});
+            for (final d in deptsList) {
+              if (!parsedDepts.contains(d)) parsedDepts.add(d);
+            }
+          }
+        } else {
+          final desigName = line.trim();
+          if (desigName.isNotEmpty) {
+            parsedDesigs.add({'name': desigName, 'departments': <String>[]});
+          }
+        }
+      } else if (currentSection == 'roles') {
+        if (line.contains(':')) {
+          final parts = line.split(':');
+          final roleName = parts[0].trim();
+          final deptsList = parts[1].split(',').map((d) => d.trim()).where((d) => d.isNotEmpty).toList();
+          if (roleName.isNotEmpty) {
+            parsedRoles.add({'name': roleName, 'departments': deptsList});
+          }
+        } else {
+          final roleName = line.trim();
+          if (roleName.isNotEmpty) {
+            parsedRoles.add({'name': roleName, 'departments': <String>[]});
+          }
+        }
+      }
+    }
+
+    if (parsedDepts.isEmpty && parsedDesigs.isEmpty && parsedRoles.isEmpty) {
+      _showSnackBar('No valid departments, designations, or roles found in text.', isError: true);
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.preview_rounded, color: Color(0xFF5B4CF0)),
+            SizedBox(width: 8),
+            Text('Import Preview', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: SizedBox(
+          width: 500,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Review parsed configuration before saving to company setup:', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                const SizedBox(height: 12),
+
+                Text('Departments (${parsedDepts.length}):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF4F46E5))),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: parsedDepts.map((d) => Chip(
+                    label: Text('✓ $d', style: const TextStyle(fontSize: 11)),
+                    backgroundColor: const Color(0xFFEEF2FF),
+                    side: BorderSide.none,
+                    visualDensity: VisualDensity.compact,
+                  )).toList(),
+                ),
+                const SizedBox(height: 12),
+
+                Text('Designations (${parsedDesigs.length}):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF4F46E5))),
+                const SizedBox(height: 4),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: parsedDesigs.map((d) {
+                    final deptsStr = (d['departments'] as List).isNotEmpty ? (d['departments'] as List).join(' / ') : 'Global';
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2.0),
+                      child: Text('• ${d['name']} → $deptsStr', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 12),
+
+                Text('Roles (${parsedRoles.length}):', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF4F46E5))),
+                const SizedBox(height: 4),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: parsedRoles.map((r) {
+                    final deptsStr = (r['departments'] as List).isNotEmpty ? (r['departments'] as List).join(' / ') : 'Company Wide';
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2.0),
+                      child: Text('• ${r['name']} → $deptsStr', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B4CF0), foregroundColor: Colors.white),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await _commitImportedConfig(companyId, parsedDepts, parsedDesigs, parsedRoles);
+            },
+            child: const Text('Save Configuration'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _commitImportedConfig(
+    String companyId,
+    List<String> depts,
+    List<Map<String, dynamic>> desigs,
+    List<Map<String, dynamic>> roles,
+  ) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final adminUser = ref.read(authProvider).user;
+      final existingDepts = ref.read(adminDepartmentsProvider).value ?? [];
+      final Map<String, String> deptNameToId = {};
+
+      for (final deptName in depts) {
+        final match = existingDepts.firstWhere((d) => d.departmentName.toLowerCase() == deptName.toLowerCase(), orElse: () => DepartmentModel(departmentId: '', companyId: '', departmentName: '', departmentCode: '', createdAt: DateTime.now(), updatedAt: DateTime.now(), createdBy: ''));
+        if (match.departmentId.isNotEmpty) {
+          deptNameToId[deptName.toLowerCase()] = match.departmentId;
+        } else {
+          final newId = const Uuid().v4();
+          final code = deptName.length >= 3 ? deptName.substring(0, 3).toUpperCase() : deptName.toUpperCase();
+          final newDept = DepartmentModel(
+            departmentId: newId,
+            companyId: companyId,
+            departmentName: deptName,
+            departmentCode: code,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+            createdBy: adminUser?.email ?? 'Admin',
+          );
+          await ref.read(adminDepartmentsProvider.notifier).saveDepartment(newDept);
+          deptNameToId[deptName.toLowerCase()] = newId;
+        }
+      }
+
+      await ref.read(adminDepartmentsProvider.notifier).loadDepartments();
+      final updatedDepts = ref.read(adminDepartmentsProvider).value ?? [];
+      for (final d in updatedDepts) {
+        deptNameToId[d.departmentName.toLowerCase()] = d.departmentId;
+      }
+
+      for (final desig in desigs) {
+        final desigName = desig['name'] as String;
+        final deptNames = desig['departments'] as List<String>;
+        final mappedIds = deptNames.map((n) => deptNameToId[n.toLowerCase()]).whereType<String>().toList();
+        final primaryId = mappedIds.isNotEmpty ? mappedIds.first : (updatedDepts.isNotEmpty ? updatedDepts.first.departmentId : '');
+
+        final newDesig = DesignationModel(
+          designationId: const Uuid().v4(),
+          companyId: companyId,
+          designationName: desigName,
+          designationLevel: 1,
+          departmentId: primaryId,
+          managedDepartmentIds: mappedIds.isNotEmpty ? mappedIds : (primaryId.isNotEmpty ? [primaryId] : []),
+          canManageDepartments: mappedIds.length > 1,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+
+        await ref.read(adminDesignationsProvider.notifier).saveDesignation(newDesig);
+      }
+
+      for (final role in roles) {
+        final roleName = role['name'] as String;
+        final deptNames = role['departments'] as List<String>;
+        final mappedIds = deptNames.map((n) => deptNameToId[n.toLowerCase()]).whereType<String>().toList();
+
+        final newRole = RoleModel(
+          roleId: const Uuid().v4(),
+          companyId: companyId,
+          roleName: roleName,
+          departmentIds: mappedIds,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+
+        await ref.read(adminRolesProvider.notifier).saveRole(newRole);
+      }
+
+      if (mounted) Navigator.pop(context);
+      _showSnackBar('Company configuration imported successfully!');
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      _showSnackBar('Import error: $e', isError: true);
     }
   }
 }

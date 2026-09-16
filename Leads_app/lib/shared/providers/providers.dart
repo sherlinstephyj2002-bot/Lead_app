@@ -23,6 +23,7 @@ import '../services/password_encryption.dart';
 import '../services/app_error_handler.dart';
 import '../repositories/customer_repository.dart';
 import '../repositories/attendance_repository.dart';
+export 'password_reset_provider.dart';
 import '../repositories/lead_repository.dart';
 import 'permissions_provider.dart';
 import '../repositories/order_repository.dart';
@@ -735,6 +736,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         companyEmail: adminEmail,
         tenantId: compId,
         temporaryPasswordRequired: false,
+        mustChangePassword: false,
+        securityPinConfigured: true,
         accountStatus: 'Active',
       );
 
@@ -1759,24 +1762,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } catch (e, stack) {
       state = state.copyWith(isLoading: false, errorMessage: AppErrorHandler.parseError(e, stack));
       return false;
-    }
-  }
-
-  Future<String?> uploadAvatar(String fileName, Uint8List fileBytes) async {
-    final currentUser = state.user;
-    if (currentUser == null) return null;
-    
-    try {
-      state = state.copyWith(isLoading: true, errorMessage: null);
-      final downloadUrl = await _userRepo.uploadProfileImage(currentUser.uid, fileName, fileBytes);
-      await _userRepo.updateUserProfile(currentUser.uid, name: currentUser.name, profileImageUrl: downloadUrl);
-      
-      final updatedUser = currentUser.copyWith(profileImageUrl: downloadUrl);
-      state = AuthState(user: updatedUser, isLoading: false);
-      return downloadUrl;
-    } catch (e, stack) {
-      state = state.copyWith(isLoading: false, errorMessage: AppErrorHandler.parseError(e, stack));
-      return null;
     }
   }
 
@@ -3554,36 +3539,6 @@ class CompanyNotifier extends StateNotifier<AsyncValue<CompanyModel?>> {
     try {
       await _companyRepo.saveCompany(updatedCompany);
       state = AsyncValue.data(updatedCompany);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<bool> uploadLogo(String fileName, Uint8List fileBytes) async {
-    final company = state.value;
-    if (company == null) return false;
-
-    try {
-      final logoUrl = await _companyRepo.uploadCompanyLogo(company.companyId, fileBytes);
-      final updated = company.copyWith(logoUrl: logoUrl);
-      await _companyRepo.saveCompany(updated);
-      state = AsyncValue.data(updated);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<bool> removeLogo() async {
-    final company = state.value;
-    if (company == null) return false;
-
-    try {
-      await _companyRepo.deleteCompanyLogo(company.companyId);
-      final updated = company.copyWith(clearLogoUrl: true);
-      await _companyRepo.saveCompany(updated);
-      state = AsyncValue.data(updated);
       return true;
     } catch (_) {
       return false;

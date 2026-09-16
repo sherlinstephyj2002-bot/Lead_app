@@ -124,7 +124,9 @@ class NotificationCenterNotifier extends StateNotifier<NotificationCenterState> 
       final bodyUpper = b.body.toUpperCase();
 
       NotificationCategory category = NotificationCategory.system;
-      if (typeStr.contains('LEAVE') || titleUpper.contains('LEAVE') || bodyUpper.contains('LEAVE')) {
+      if (typeStr.contains('PASSWORD') || titleUpper.contains('PASSWORD')) {
+        category = NotificationCategory.hr;
+      } else if (typeStr.contains('LEAVE') || titleUpper.contains('LEAVE') || bodyUpper.contains('LEAVE')) {
         category = NotificationCategory.leaves;
       } else if (typeStr.contains('ATTENDANCE') || typeStr.contains('CHECKIN') || typeStr.contains('CHECKOUT') || titleUpper.contains('ATTENDANCE') || bodyUpper.contains('ATTENDANCE')) {
         category = NotificationCategory.attendance;
@@ -169,7 +171,14 @@ class NotificationCenterNotifier extends StateNotifier<NotificationCenterState> 
       String? actionLabel;
       String? actionRoute;
 
-      if (typeStr.contains('LEAVE') || titleUpper.contains('LEAVE') || bodyUpper.contains('LEAVE')) {
+      final relatedMod = (b.relatedModule ?? '').toUpperCase();
+      if (typeStr.contains('PASSWORD') || titleUpper.contains('PASSWORD') || relatedMod.contains('PASSWORD')) {
+        actionLabel = 'View Request';
+        final reqId = b.relatedEntityId ?? '';
+        actionRoute = reqId.isNotEmpty
+            ? '/company-admin/password-reset-requests?requestId=$reqId'
+            : '/company-admin/password-reset-requests';
+      } else if (typeStr.contains('LEAVE') || titleUpper.contains('LEAVE') || bodyUpper.contains('LEAVE')) {
         actionLabel = 'View Leaves';
         actionRoute = '/leaves';
       } else if (typeStr.contains('ATTENDANCE') || typeStr.contains('CHECKIN') || typeStr.contains('CHECKOUT') || titleUpper.contains('ATTENDANCE') || bodyUpper.contains('ATTENDANCE')) {
@@ -181,7 +190,7 @@ class NotificationCenterNotifier extends StateNotifier<NotificationCenterState> 
       } else if (typeStr.contains('ORDER') || typeStr.contains('INVOICE') || titleUpper.contains('ORDER') || bodyUpper.contains('ORDER')) {
         actionLabel = 'View Orders';
         actionRoute = '/orders';
-      } else if (typeStr.contains('EMPLOYEE') || typeStr.contains('HR') || typeStr.contains('REQUEST') || titleUpper.contains('REQUEST')) {
+      } else if (!titleUpper.contains('PASSWORD') && (typeStr.contains('EMPLOYEE') || typeStr.contains('HR') || typeStr.contains('REQUEST') || titleUpper.contains('REQUEST'))) {
         actionLabel = 'View Requests';
         actionRoute = '/employee-requests';
       } else if (typeStr.contains('EXPORT') || typeStr.contains('REPORT') || typeStr.contains('OVERRIDE') || titleUpper.contains('REPORT') || titleUpper.contains('OVERRIDE') || titleUpper.contains('APPROVAL') || bodyUpper.contains('REPORT')) {
