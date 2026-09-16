@@ -58,20 +58,15 @@ class EmployeeDetailDialog extends StatelessWidget {
                 children: [
                   CircleAvatar(
                     radius: 32,
-                    backgroundColor: theme.primaryColor.withValues(alpha: 0.2),
-                    backgroundImage: employee.profileImageUrl != null
-                        ? NetworkImage(employee.profileImageUrl!)
-                        : null,
-                    child: employee.profileImageUrl == null
-                        ? Text(
-                            employee.name.isNotEmpty ? employee.name[0].toUpperCase() : 'E',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: theme.primaryColor,
-                            ),
-                          )
-                        : null,
+                    backgroundColor: theme.primaryColor.withValues(alpha: 0.15),
+                    child: Text(
+                      _getInitials(employee.name),
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: theme.primaryColor,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 20),
                   Expanded(
@@ -294,4 +289,12 @@ class EmployeeDetailDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+String _getInitials(String? name) {
+  if (name == null || name.trim().isEmpty) return 'E';
+  final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+  if (parts.isEmpty) return 'E';
+  if (parts.length == 1) return parts[0][0].toUpperCase();
+  return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
 }
