@@ -823,52 +823,57 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            final isDark = Theme.of(context).brightness == Brightness.dark;
-            Widget _buildReadOnlyFormWidget(String label, String value) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))),
-                    const SizedBox(height: 4),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                      ),
-                      child: Text(value, style: TextStyle(fontSize: 13, color: isDark ? Colors.white : const Color(0xFF334155), fontWeight: FontWeight.w500)),
+        return Consumer(
+          builder: (modalCtx, ref, child) {
+            final liveDepts = ref.watch(adminDepartmentsProvider).value ?? depts;
+            final liveDesigs = ref.watch(adminDesignationsProvider).value ?? desigs;
+
+            return StatefulBuilder(
+              builder: (context, setModalState) {
+                final isDark = Theme.of(context).brightness == Brightness.dark;
+                Widget _buildReadOnlyFormWidget(String label, String value) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))),
+                        const SizedBox(height: 4),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                          ),
+                          child: Text(value, style: TextStyle(fontSize: 13, color: isDark ? Colors.white : const Color(0xFF334155), fontWeight: FontWeight.w500)),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              );
-            }
+                  );
+                }
 
-            // Uniqueness and fallback validations for every dropdown to prevent crashes
-            final activeDepts = depts.where((d) {
-              if (d.status.toLowerCase() == 'active') return true;
-              if (existingEmp != null && d.departmentId == selectedDeptId) return true;
-              return false;
-            }).toList();
-            final seenDepts = <String>{};
-            final uniqueDepts = activeDepts.where((d) => seenDepts.add(d.departmentId)).toList();
-            final validDeptId = (selectedDeptId != null && uniqueDepts.any((d) => d.departmentId == selectedDeptId))
-                ? selectedDeptId
-                : null;
+                // Uniqueness and fallback validations for every dropdown to prevent crashes
+                final activeDepts = liveDepts.where((d) {
+                  if (d.status.toLowerCase() == 'active') return true;
+                  if (existingEmp != null && d.departmentId == selectedDeptId) return true;
+                  return false;
+                }).toList();
+                final seenDepts = <String>{};
+                final uniqueDepts = activeDepts.where((d) => seenDepts.add(d.departmentId)).toList();
+                final validDeptId = (selectedDeptId != null && uniqueDepts.any((d) => d.departmentId == selectedDeptId))
+                    ? selectedDeptId
+                    : null;
 
-            final activeDesigs = desigs.where((d) {
-              return (d.status.toLowerCase() == 'active') || (existingEmp != null && d.designationId == selectedDesigId);
-            }).toList();
-            final seenDesigs = <String>{};
-            final uniqueDesigs = activeDesigs.where((d) => seenDesigs.add(d.designationId)).toList();
-            final validDesigId = (selectedDesigId != null && uniqueDesigs.any((d) => d.designationId == selectedDesigId))
-                ? selectedDesigId
-                : null;
+                final activeDesigs = liveDesigs.where((d) {
+                  return (d.status.toLowerCase() == 'active') || (existingEmp != null && d.designationId == selectedDesigId);
+                }).toList();
+                final seenDesigs = <String>{};
+                final uniqueDesigs = activeDesigs.where((d) => seenDesigs.add(d.designationId)).toList();
+                final validDesigId = (selectedDesigId != null && uniqueDesigs.any((d) => d.designationId == selectedDesigId))
+                    ? selectedDesigId
+                    : null;
 
             final managerList = employees.where((u) => u.uid != existingEmp?.uid).toList();
             final seenManagers = <String>{};
@@ -1341,6 +1346,7 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
                         context,
                         ref,
                         uniqueDepts,
+                        defaultDepartment: uniqueDepts.where((d) => d.departmentId == selectedDeptId).firstOrNull,
                         onCreated: (newDesig) {
                           setModalState(() {
                             selectedDesigId = newDesig.designationId;
@@ -1885,6 +1891,8 @@ class _EmployeeManagementScreenState extends ConsumerState<EmployeeManagementScr
         );
       },
     );
+  },
+);
   }
 
   Future<void> _exportCredentialsToPdf(String employeeId, String companyCode, String companyEmail, String password) async {

@@ -1157,6 +1157,7 @@ class EmployeeFormSheetState extends State<EmployeeFormSheet> {
                 context,
                 widget.ref,
                 activeDepts,
+                defaultDepartment: _selectedDepartment,
                 onCreated: (newDesig) {
                   setState(() {
                     _selectedDesignation = newDesig;

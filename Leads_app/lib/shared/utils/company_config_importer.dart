@@ -13,12 +13,13 @@ class CompanyConfigImporter {
     BuildContext context,
     WidgetRef ref,
     List<DepartmentModel> activeDepts, {
+    DepartmentModel? defaultDepartment,
     void Function(DesignationModel)? onCreated,
   }) {
     final nameCtrl = TextEditingController();
     final Set<String> selectedDeptIds = {};
-    DepartmentModel? primaryDept = activeDepts.isNotEmpty ? activeDepts.first : null;
-    if (primaryDept != null) selectedDeptIds.add(primaryDept.departmentId);
+    DepartmentModel? primaryDept = defaultDepartment ?? (activeDepts.isNotEmpty ? activeDepts.first : null);
+    if (primaryDept != null) selectedDeptIds.add(primaryDept!.departmentId);
     bool isSaving = false;
 
     showDialog(
@@ -135,7 +136,21 @@ class CompanyConfigImporter {
                     setDialogState(() => isSaving = true);
                     try {
                       final user = ref.read(authProvider).user;
-                      final companyId = user?.companyId ?? '';
+                      final company = ref.read(companyProvider).value;
+                      final companyId = (user?.companyId != null && user!.companyId.isNotEmpty)
+                          ? user.companyId
+                          : ((company?.companyId != null && company!.companyId.isNotEmpty)
+                              ? company.companyId
+                              : (user?.tenantId ?? ''));
+
+                      if (companyId.isEmpty) {
+                        setDialogState(() => isSaving = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Unable to identify company context. Please try again.')),
+                        );
+                        return;
+                      }
+
                       final desigId = 'desig_${DateTime.now().millisecondsSinceEpoch}';
                       final managed = selectedDeptIds.toList();
                       if (primaryDept != null && !managed.contains(primaryDept!.departmentId)) {
@@ -156,15 +171,16 @@ class CompanyConfigImporter {
 
                       final success = await ref.read(adminDesignationsProvider.notifier).saveDesignation(newDesig);
                       if (context.mounted) {
-                        Navigator.pop(ctx);
                         if (success) {
+                          Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('Custom Designation "$desigName" created successfully.')),
                           );
                           if (onCreated != null) onCreated(newDesig);
                         } else {
+                          setDialogState(() => isSaving = false);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Designation already exists.')),
+                            SnackBar(content: Text('Designation "$desigName" already exists for this company.')),
                           );
                         }
                       }
